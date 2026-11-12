@@ -90,9 +90,10 @@ def test_real_files():
 
 
 def test_mock_ci():
-    """Synthetic tests for headless CI runners."""
+    """Synthetic tests for headless CI runners (tests both Invoices and Sale Certificates)."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        mock_pdf = os.path.join(tmpdir, "mock_sc.pdf")
+        # 1. Mock Sale Certificate
+        mock_sc = os.path.join(tmpdir, "mock_sc.pdf")
         doc = fitz.open()
         p = doc.new_page(width=595, height=842)
         p.insert_text((56.7, 35.0), "M/s.Shanti Motors", fontsize=9.0)
@@ -106,22 +107,51 @@ def test_mock_ci():
         p.insert_text((80.0, 356.0), "purchase/hypothecation with", fontsize=9.0)
         p.insert_text((326.0, 356.0), "HERO FINCORP LTD", fontsize=9.0)
         p.insert_text((480.0, 595.0), "For M/s.Shanti Motors", fontsize=9.0)
-        doc.save(mock_pdf)
+        doc.save(mock_sc)
         doc.close()
 
-        out_pdf = os.path.join(tmpdir, "mock_out.pdf")
-        stats = converter.convert_document(mock_pdf, out_pdf, hypothecation="TATA CAPITAL LTD", new_date="25/11/2026")
-        assert stats["status"] == "success"
-        assert stats["doc_type"] == "sale_certificate"
+        out_sc = os.path.join(tmpdir, "mock_sc_out.pdf")
+        stats_sc = converter.convert_document(mock_sc, out_sc, hypothecation="TATA CAPITAL LTD", new_date="25/11/2026")
+        assert stats_sc["status"] == "success"
+        assert stats_sc["doc_type"] == "sale_certificate"
 
-        doc_out = fitz.open(out_pdf)
+        doc_out = fitz.open(out_sc)
         p_out = doc_out[0]
         assert len(p_out.search_for("Shanti Motors")) == 0
         assert len(p_out.search_for("ANNAPURNA MOTORS")) >= 1
         assert len(p_out.search_for("TATA CAPITAL LTD")) >= 1
         assert len(p_out.search_for("25/11/2026")) >= 2
         doc_out.close()
-        print("MOCK CI TEST PASSED!")
+        print("MOCK SALE CERTIFICATE CI TEST PASSED!")
+
+        # 2. Mock Tax Invoice
+        mock_inv = os.path.join(tmpdir, "mock_inv.pdf")
+        doc_inv = fitz.open()
+        p_inv = doc_inv.new_page(width=595, height=842)
+        p_inv.insert_text((28.0, 30.0), "TAX INVOICE", fontsize=12.0)
+        p_inv.insert_text((28.0, 120.5), "M/S.SHANTI MOTORS", fontsize=9.0)
+        p_inv.insert_text((28.0, 131.0), "NEAR NEW BUS STAND, PUNARVAS NISARPUR", fontsize=9.0)
+        p_inv.insert_text((28.0, 142.0), "KUKSHI DHAR MADHYA PRADESH 454335", fontsize=9.0)
+        p_inv.insert_text((28.0, 153.0), "Authorized Representative of Dealer: Hero MotoCorp Ltd.", fontsize=9.0)
+        p_inv.insert_text((28.0, 164.0), "GSTIN #: 23AQMPP0120E1ZE", fontsize=9.0)
+        p_inv.insert_text((420.0, 225.0), "Date", fontsize=9.0)
+        p_inv.insert_text((480.0, 225.0), "11/11/2026 14:30", fontsize=9.0)
+        p_inv.insert_text((450.0, 600.0), "For M/S.SHANTI MOTORS", fontsize=9.0)
+        doc_inv.save(mock_inv)
+        doc_inv.close()
+
+        out_inv = os.path.join(tmpdir, "mock_inv_out.pdf")
+        stats_inv = converter.convert_document(mock_inv, out_inv, hypothecation="HERO FINCORP LTD", new_date="26/11/2026")
+        assert stats_inv["status"] == "success"
+        assert stats_inv["doc_type"] == "invoice"
+
+        doc_inv_out = fitz.open(out_inv)
+        p_inv_out = doc_inv_out[0]
+        assert len(p_inv_out.search_for("SHANTI MOTORS")) == 0
+        assert len(p_inv_out.search_for("ANNAPURNA MOTORS")) >= 1
+        assert len(p_inv_out.search_for("26/11/2026")) >= 1
+        doc_inv_out.close()
+        print("MOCK INVOICE CI TEST PASSED!")
 
 
 if __name__ == "__main__":
