@@ -12,6 +12,7 @@ import tempfile
 import uuid
 from flask import Flask, request, jsonify, send_file, render_template_string
 from werkzeug.utils import secure_filename
+import fitz
 import converter
 
 app = Flask(__name__)
@@ -60,6 +61,11 @@ HTML_TEMPLATE = """
         .form-hint { font-size: 11px; color: var(--text-muted); }
         .form-control { width: 100%; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--text-dark); background: #fff; transition: border-color 0.2s; outline: none; }
         .form-control:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,0.1); }
+
+        /* Mode Tabs */
+        .tabs { display: flex; gap: 8px; margin-bottom: 20px; background: #e2e8f0; padding: 4px; border-radius: 10px; }
+        .tab-btn { flex: 1; padding: 10px 16px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; color: var(--text-muted); background: transparent; transition: all 0.2s; }
+        .tab-btn.active { background: #fff; color: var(--primary); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
 
         .drop-zone { display: block; border: 2px dashed #cbd5e1; border-radius: var(--radius); padding: 32px 20px; text-align: center; cursor: pointer; transition: all 0.2s; background: #f8fafc; }
         .drop-zone:hover, .drop-zone.dragover { border-color: var(--primary); background: #eff6ff; }
@@ -115,7 +121,14 @@ HTML_TEMPLATE = """
         <div class="header">
             <span class="badge">Shanti Motors ➔ Annapurna Motors</span>
             <h1 class="title">Hero Document Converter</h1>
-            <p class="subtitle">Convert Invoices & Sale Certificates simultaneously to Annapurna Motors format</p>
+            <p class="subtitle">Pixel-perfect conversion for Hero MotoCorp Invoices & Form 21 Sale Certificates</p>
+        </div>
+
+        <!-- Mode Selector Tabs -->
+        <div class="tabs">
+            <button class="tab-btn active" id="tab-invoice" onclick="switchMode('invoice')">🧾 Tax Invoice</button>
+            <button class="tab-btn" id="tab-sc" onclick="switchMode('sale-cert')">📜 Sale Certificate</button>
+            <button class="tab-btn" id="tab-batch" onclick="switchMode('batch')">⚡ Batch (Both)</button>
         </div>
 
         <div class="card">
@@ -130,27 +143,27 @@ HTML_TEMPLATE = """
                         <option value="AASTHA SAKH SAHKARITA">AASTHA SAKH SAHKARITA</option>
                         <option value="BLANK">Leave Blank (Cash / None)</option>
                     </select>
-                    <span class="form-hint">Applies to both Invoices and Sale Certificates</span>
+                    <span class="form-hint">Updates the hypothecation financier</span>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Change Date</label>
                     <input type="text" class="form-control" id="date-input" placeholder="e.g. 15/11/2026 (Leave blank for original)">
-                    <span class="form-hint">Format: DD/MM/YYYY. Updates invoice and certificate date</span>
+                    <span class="form-hint">Format: DD/MM/YYYY. Preserves original invoice time.</span>
                 </div>
             </div>
         </div>
 
         <div class="card">
-            <div class="card-title">2. Upload PDFs (Invoices & Sale Certificates)</div>
+            <div class="card-title" id="upload-card-title">2. Upload Tax Invoice(s)</div>
             
             <!-- Hidden file input using off-screen positioning so it is always accessible to native label clicks -->
             <input type="file" id="file-input" multiple accept=".pdf,.PDF,application/pdf" style="position:fixed; top:-2000px; left:-2000px; opacity:0; pointer-events:none;">
 
             <label for="file-input" class="drop-zone" id="drop-zone">
-                <div class="drop-zone-icon">📄</div>
-                <div class="drop-zone-title">Click anywhere to upload or drag & drop PDF files</div>
-                <div class="drop-zone-desc">You can upload Invoices AND Sale Certificates together in the same batch!</div>
-                <span class="btn-browse">📁 Browse & Select Files</span>
+                <div class="drop-zone-icon" id="drop-zone-icon">🧾</div>
+                <div class="drop-zone-title" id="drop-zone-title">Click anywhere to select or drag & drop Tax Invoices</div>
+                <div class="drop-zone-desc" id="drop-zone-desc">Original template is 100% preserved with zero font truncation.</div>
+                <span class="btn-browse" id="btn-browse-text">📁 Browse & Select Invoices</span>
             </label>
 
             <div class="file-list" id="file-list"></div>
@@ -189,10 +202,45 @@ HTML_TEMPLATE = """
     </div>
 
     <script>
+        let currentMode = 'invoice';
         let selectedFiles = [];
 
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('file-input');
+
+        function switchMode(mode) {
+            currentMode = mode;
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(mode === 'invoice' ? 'tab-invoice' : (mode === 'sale-cert' ? 'tab-sc' : 'tab-batch')).classList.add('active');
+
+            const uploadTitle = document.getElementById('upload-card-title');
+            const dropIcon = document.getElementById('drop-zone-icon');
+            const dropTitle = document.getElementById('drop-zone-title');
+            const dropDesc = document.getElementById('drop-zone-desc');
+            const browseText = document.getElementById('btn-browse-text');
+
+            if (mode === 'invoice') {
+                uploadTitle.innerText = '2. Upload Tax Invoice(s)';
+                dropIcon.innerText = '🧾';
+                dropTitle.innerText = 'Click anywhere to select or drag & drop Tax Invoices';
+                dropDesc.innerText = 'Original template is 100% preserved with zero font truncation.';
+                browseText.innerText = '📁 Browse & Select Invoices';
+            } else if (mode === 'sale-cert') {
+                uploadTitle.innerText = '2. Upload Sale Certificate(s) - Form 21';
+                dropIcon.innerText = '📜';
+                dropTitle.innerText = 'Click anywhere to select or drag & drop Sale Certificates';
+                dropDesc.innerText = 'Updates top date, delivery clause date, header, and signatory cleanly.';
+                browseText.innerText = '📁 Browse & Select Sale Certificates';
+            } else {
+                uploadTitle.innerText = '2. Upload Invoices & Sale Certificates (Batch)';
+                dropIcon.innerText = '📄';
+                dropTitle.innerText = 'Click anywhere to select or drag & drop files';
+                dropDesc.innerText = 'Convert Tax Invoices and Form 21 Sale Certificates together in one batch!';
+                browseText.innerText = '📁 Browse & Select Files';
+            }
+
+            clearAllFiles();
+        }
 
         // File selection handler - native label automatically triggers fileInput
         fileInput.addEventListener('change', function() {
@@ -297,6 +345,7 @@ HTML_TEMPLATE = """
             progressStatus.innerText = `Processing ${selectedFiles.length} document(s)...`;
 
             const formData = new FormData();
+            formData.append('doc_mode', currentMode);
             formData.append('hypothecation', hypo);
             formData.append('new_date', dateVal);
             selectedFiles.forEach(f => formData.append('files', f));
@@ -388,6 +437,8 @@ def api_convert():
     hypothecation = request.form.get('hypothecation', 'KEEP_ORIGINAL')
     new_date = request.form.get('new_date', '').strip()
 
+    doc_mode = request.form.get('doc_mode', 'invoice')
+
     converted_files = []
     batch_token = str(uuid.uuid4())
     token_files = []
@@ -407,12 +458,23 @@ def api_convert():
         out_path = os.path.join(temp_dir, f"out_{converted_name}")
 
         try:
-            stats = converter.convert_document(
-                in_path,
-                out_path,
-                hypothecation=hypothecation,
-                new_date=new_date
-            )
+            if doc_mode == 'invoice':
+                doc = fitz.open(in_path)
+                stats = converter.convert_invoice(doc, hypothecation=hypothecation, new_date=new_date)
+                doc.save(out_path)
+                doc.close()
+            elif doc_mode == 'sale-cert':
+                doc = fitz.open(in_path)
+                stats = converter.convert_sale_certificate(doc, hypothecation=hypothecation, new_date=new_date)
+                doc.save(out_path)
+                doc.close()
+            else:
+                stats = converter.convert_document(
+                    in_path,
+                    out_path,
+                    hypothecation=hypothecation,
+                    new_date=new_date
+                )
 
             file_id = str(uuid.uuid4())
             with open(out_path, 'rb') as out_f:

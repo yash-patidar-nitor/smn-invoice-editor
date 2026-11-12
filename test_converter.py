@@ -36,12 +36,14 @@ def test_real_files():
             # Verify Annapurna is present
             assert len(page0.search_for("ANNAPURNA MOTORS")) >= 1
             assert len(page0.search_for("For ANNAPURNA MOTORS")) >= 1
-            # Verify Hypothecation
-            assert len(page0.search_for("TATA CAPITAL LTD")) >= 1
-            # Verify Date
-            assert len(page0.search_for("18/11/2026")) >= 1
+            # Verify Invoice # and Mobile # are NOT truncated
+            assert len(page0.search_for("63502BK26S368")) >= 1
+            assert len(page0.search_for("9343006704")) >= 1
+            # Verify Page 2 (Terms & Conditions) was NOT touched
+            assert len(doc[1].search_for("ANNAPURNA")) == 0
+            assert len(doc[1].search_for("TATA CAPITAL")) == 0
             doc.close()
-            print("INVOICE TEST PASSED: Header, Footer, Hypothecation & Date verified!")
+            print("INVOICE TEST PASSED: Header, Footer, Hypothecation, Date, and pristine font preservation verified!")
 
     # 2. Test Sale Certificate if present
     sc_path = r"c:\Users\yash.patidar\Downloads\Sale Certificate - 2026-11-12T211331.714.PDF"

@@ -52,16 +52,15 @@ def update_hypothecation_invoice(page: fitz.Page, hypothecation: str) -> bool:
     hits = page.search_for("Hypothecation with")
     if not hits:
         return False
-    h = hits[0]
 
-    # Target the value area to the right of 'Hypothecation with'
-    val_rect = fitz.Rect(125, h.y0 - 2, 350, h.y1 + 2)
+    # Target the value area strictly between y=338.0 and 348.8 so Mobile # at y<=337.5 is NEVER truncated
+    val_rect = fitz.Rect(125.0, 338.0, 360.0, 348.8)
     page.add_redact_annot(val_rect, fill=(1, 1, 1))
     page.apply_redactions()
 
     if hypothecation != "BLANK":
         page.insert_text(
-            (132.30, h.y1 - 0.5),
+            (132.30, 346.64),
             hypothecation.strip(),
             fontsize=9.0,
             fontname="helv",
@@ -78,16 +77,15 @@ def update_hypothecation_sale_certificate(page: fitz.Page, hypothecation: str) -
     hits = page.search_for("hypothecation with")
     if not hits:
         return False
-    h = hits[0]
 
-    # Value in Sale Certificate starts around x = 310
-    val_rect = fitz.Rect(310, h.y0 - 2, 530, h.y1 + 2)
+    # Value in Sale Certificate starts around x = 320, strictly between y=357.0 and 369.0
+    val_rect = fitz.Rect(320.0, 357.0, 530.0, 369.0)
     page.add_redact_annot(val_rect, fill=(1, 1, 1))
     page.apply_redactions()
 
     if hypothecation != "BLANK":
         page.insert_text(
-            (326.25, h.y1 - 0.5),
+            (326.25, 366.27),
             hypothecation.strip(),
             fontsize=9.0,
             fontname="helv",
@@ -104,9 +102,9 @@ def update_date_invoice(page: fitz.Page, new_date_str: str) -> bool:
     date_hits = [h for h in page.search_for("Date") if 200 < h.y0 < 250 and h.x0 > 380]
     if not date_hits:
         return False
-    dh = date_hits[0]
 
-    val_rect = fitz.Rect(dh.x1 + 5, dh.y0 - 2, 580, dh.y1 + 2)
+    # Strictly between y=223.5 and 234.5 so Invoice # at y<=223.0 is NEVER truncated
+    val_rect = fitz.Rect(478.0, 223.5, 580.0, 234.5)
     old_text = page.get_text("text", clip=val_rect).strip()
     time_match = re.search(r"\d{1,2}:\d{2}(?::\d{2})?", old_text)
     time_part = f" {time_match.group(0)}" if time_match else ""
@@ -120,8 +118,8 @@ def update_date_invoice(page: fitz.Page, new_date_str: str) -> bool:
         final_date = f"{new_date_str.strip()}{time_part}"
 
     page.insert_text(
-        (479.8, dh.y1 - 0.5),
-        final_date,
+        (479.8, 232.17),
+        f" {final_date.lstrip()}",
         fontsize=9.0,
         fontname="helv",
         color=(0, 0, 0)
@@ -137,93 +135,91 @@ def update_date_sale_certificate(page: fitz.Page, new_date_str: str) -> bool:
     clean_match = re.search(r"\d{2}/\d{2}/\d{4}", new_date_str)
     date_only = clean_match.group(0) if clean_match else new_date_str.strip()
 
-    # 1. Top right date
-    date_hits = [h for h in page.search_for("Date") if 100 < h.y0 < 140 and h.x0 > 450]
+    # 1. Top right date: strictly y=121.0 to 133.0
+    val_rect = fitz.Rect(510.0, 121.0, 580.0, 133.0)
+    old_text = page.get_text("text", clip=val_rect).strip()
     old_date = None
-    if date_hits:
-        dh = date_hits[0]
-        val_rect = fitz.Rect(dh.x1 + 5, dh.y0 - 2, 580, dh.y1 + 2)
-        old_text = page.get_text("text", clip=val_rect).strip()
-        m = re.search(r"\d{2}/\d{2}/\d{4}", old_text)
-        if m:
-            old_date = m.group(0)
+    m = re.search(r"\d{2}/\d{2}/\d{4}", old_text)
+    if m:
+        old_date = m.group(0)
 
-        page.add_redact_annot(val_rect, fill=(1, 1, 1))
-        page.apply_redactions()
-        page.insert_text(
-            (512.1, dh.y1 - 0.5),
-            f"  {date_only}",
-            fontsize=9.0,
-            fontname="helv",
-            color=(0, 0, 0)
-        )
+    page.add_redact_annot(val_rect, fill=(1, 1, 1))
+    page.apply_redactions()
+    page.insert_text(
+        (512.1, 130.19),
+        f"  {date_only}",
+        fontsize=9.0,
+        fontname="helv",
+        color=(0, 0, 0)
+    )
 
     # 2. Date in body paragraph (e.g. 'delivered by us on date 11/11/2026 with')
-    if old_date:
-        for hit in page.search_for(old_date):
-            if 150 < hit.y0 < 250:
-                page.add_redact_annot(
-                    fitz.Rect(hit.x0 - 1, hit.y0 - 1, hit.x1 + 1, hit.y1 + 1),
-                    fill=(1, 1, 1)
-                )
-                page.apply_redactions()
-                page.insert_text(
-                    (hit.x0, hit.y1 - 0.5),
-                    date_only,
-                    fontsize=9.0,
-                    fontname="helv",
-                    color=(0, 0, 0)
-                )
+    # Strictly between y=190.0 and 200.0, x=64.0 and 115.0
+    body_date_rect = fitz.Rect(64.0, 190.0, 115.0, 200.0)
+    page.add_redact_annot(body_date_rect, fill=(1, 1, 1))
+    page.apply_redactions()
+    page.insert_text(
+        (65.7, 197.83),
+        date_only,
+        fontsize=9.0,
+        fontname="helv",
+        color=(0, 0, 0)
+    )
     return True
 
 
 def convert_invoice(doc: fitz.Document, hypothecation: str = None, new_date: str = None) -> dict:
-    """Convert a Shanti Motors Tax Invoice into Annapurna Motors format."""
+    """Convert a Shanti Motors Tax Invoice into Annapurna Motors format. Strictly touches Page 1 only."""
     cfg = ANNAPURNA_INVOICE_CONFIG
     headers_replaced = 0
     footers_replaced = 0
 
-    for page in doc:
-        # 1. Replace Header
-        shanti_hits = page.search_for("SHANTI MOTORS")
-        gstin_hits = page.search_for("23AQMPP0120E1ZE")
-        header_hit = any(h.y0 < 200 for h in shanti_hits)
+    if len(doc) == 0:
+        return {"doc_type": "invoice", "headers_replaced": 0, "footers_replaced": 0}
 
-        if header_hit or (gstin_hits and gstin_hits[0].y0 < 200):
-            header_rect = fitz.Rect(26.0, 106.0, 440.0, 170.0)
-            page.add_redact_annot(header_rect, fill=(1, 1, 1))
-            page.apply_redactions()
+    # Invoice content is strictly on Page 0 (Page 1 is Terms & Conditions which must stay untouched)
+    page = doc[0]
 
-            page.insert_text((28.35, 120.5), cfg["dealer_name"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-            page.insert_text((28.35, 131.0), cfg["address_line1"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-            page.insert_text((28.35, 142.0), cfg["address_line2"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-            page.insert_text((28.35, 153.0), cfg["dealer_auth"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-            page.insert_text((28.35, 164.0), cfg["gstin_pan"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-            headers_replaced += 1
+    # 1. Replace Header on Page 0
+    shanti_hits = page.search_for("SHANTI MOTORS")
+    gstin_hits = page.search_for("23AQMPP0120E1ZE")
+    header_hit = any(h.y0 < 200 for h in shanti_hits)
 
-        # 2. Update Hypothecation if requested
-        if hypothecation:
-            update_hypothecation_invoice(page, hypothecation)
+    if header_hit or (gstin_hits and gstin_hits[0].y0 < 200):
+        header_rect = fitz.Rect(26.0, 106.0, 440.0, 170.0)
+        page.add_redact_annot(header_rect, fill=(1, 1, 1))
+        page.apply_redactions()
 
-        # 3. Update Date if requested
-        if new_date:
-            update_date_invoice(page, new_date)
+        page.insert_text((28.35, 120.5), cfg["dealer_name"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+        page.insert_text((28.35, 131.0), cfg["address_line1"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+        page.insert_text((28.35, 142.0), cfg["address_line2"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+        page.insert_text((28.35, 153.0), cfg["dealer_auth"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+        page.insert_text((28.35, 164.0), cfg["gstin_pan"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+        headers_replaced += 1
 
-        # 4. Replace Footer Signatory
-        footer_hits = [h for h in page.search_for("SHANTI MOTORS") if h.y0 > 200]
-        if not footer_hits:
-            footer_hits = [h for h in page.search_for("M/S.SHANTI MOTORS") if h.y0 > 200]
+    # 2. Update Hypothecation on Page 0
+    if hypothecation:
+        update_hypothecation_invoice(page, hypothecation)
 
-        for rect in footer_hits:
-            expanded_rect = fitz.Rect(rect.x0 - 55, rect.y0 - 2, rect.x1 + 30, rect.y1 + 2)
-            page.add_redact_annot(expanded_rect, fill=(1, 1, 1))
-            page.apply_redactions()
+    # 3. Update Date on Page 0
+    if new_date:
+        update_date_invoice(page, new_date)
 
-            footer_text = cfg["footer_signatory"]
-            text_len = fitz.get_text_length(footer_text, fontname="helv", fontsize=9.0)
-            target_x = max(28.35, 577.05 - text_len)
-            page.insert_text((target_x, rect.y1 - 1.5), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
-            footers_replaced += 1
+    # 4. Replace Footer Signatory on Page 0
+    footer_hits = [h for h in page.search_for("SHANTI MOTORS") if h.y0 > 200]
+    if not footer_hits:
+        footer_hits = [h for h in page.search_for("M/S.SHANTI MOTORS") if h.y0 > 200]
+
+    for rect in footer_hits:
+        expanded_rect = fitz.Rect(rect.x0 - 55, rect.y0 - 2, rect.x1 + 30, rect.y1 + 2)
+        page.add_redact_annot(expanded_rect, fill=(1, 1, 1))
+        page.apply_redactions()
+
+        footer_text = cfg["footer_signatory"]
+        text_len = fitz.get_text_length(footer_text, fontname="helv", fontsize=9.0)
+        target_x = max(28.35, 577.05 - text_len)
+        page.insert_text((target_x, rect.y1 - 1.5), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
+        footers_replaced += 1
 
     return {
         "doc_type": "invoice",

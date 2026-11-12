@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hero Invoice & Sale Certificate Converter</title>
+    <title>Hero Document Converter - Annapurna Motors</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -23,12 +23,17 @@
         }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
         body { background: var(--bg); color: var(--text); padding: 32px 16px; min-height: 100vh; }
-        .container { max-width: 840px; margin: 0 auto; }
+        .container { max-width: 860px; margin: 0 auto; }
         
         .header { text-align: center; margin-bottom: 24px; }
         .badge { display: inline-block; padding: 4px 14px; background: #dbeafe; color: var(--primary); font-size: 12px; font-weight: 600; border-radius: 9999px; margin-bottom: 10px; }
         .title { font-size: 28px; font-weight: 700; color: var(--text); letter-spacing: -0.5px; }
         .subtitle { color: var(--muted); font-size: 14px; margin-top: 4px; }
+
+        /* Mode Tabs */
+        .tabs { display: flex; gap: 8px; margin-bottom: 20px; background: #e2e8f0; padding: 4px; border-radius: 10px; }
+        .tab-btn { flex: 1; padding: 10px 16px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; color: var(--muted); background: transparent; transition: all 0.2s; }
+        .tab-btn.active { background: #fff; color: var(--primary); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
 
         .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
         .card-title { font-size: 15px; font-weight: 600; margin-bottom: 14px; color: var(--text); display: flex; align-items: center; gap: 8px; }
@@ -77,7 +82,6 @@
         .result-type-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; margin-right: 6px; }
         .tag-inv { background: #e0e7ff; color: #4338ca; }
         .tag-sc { background: #fef3c7; color: #b45309; }
-        .tag-both { background: #dcfce7; color: #15803d; }
         .result-actions { display: flex; gap: 8px; }
         .btn-link { font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 4px; border: none; cursor: pointer; text-decoration: none; }
         .btn-preview { background: #eff6ff; color: var(--primary); }
@@ -96,7 +100,14 @@
         <div class="header">
             <span class="badge">Shanti Motors ➔ Annapurna Motors</span>
             <h1 class="title">Hero Document Converter</h1>
-            <p class="subtitle">Convert Invoices & Sale Certificates simultaneously to Annapurna Motors format</p>
+            <p class="subtitle">Pixel-perfect conversion for Hero MotoCorp Invoices & Form 21 Sale Certificates</p>
+        </div>
+
+        <!-- Mode Selector Tabs -->
+        <div class="tabs">
+            <button class="tab-btn active" id="tab-invoice" onclick="switchMode('invoice')">🧾 Tax Invoice</button>
+            <button class="tab-btn" id="tab-sc" onclick="switchMode('sale-cert')">📜 Sale Certificate</button>
+            <button class="tab-btn" id="tab-batch" onclick="switchMode('batch')">⚡ Batch (Both)</button>
         </div>
 
         <div class="card">
@@ -111,33 +122,32 @@
                         <option value="AASTHA SAKH SAHKARITA">AASTHA SAKH SAHKARITA</option>
                         <option value="BLANK">Leave Blank (Cash / None)</option>
                     </select>
-                    <span class="form-hint">Applies to both Invoices and Sale Certificates</span>
+                    <span class="form-hint" id="hypo-hint">Updates the hypothecation financier</span>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Change Date</label>
                     <input type="text" class="form-control" id="date-input" placeholder="e.g. 15/11/2026 (Leave blank for original)">
-                    <span class="form-hint">Format: DD/MM/YYYY</span>
+                    <span class="form-hint" id="date-hint">Format: DD/MM/YYYY. Preserves original invoice time.</span>
                 </div>
             </div>
         </div>
 
         <div class="card">
-            <div class="card-title">2. Upload PDFs (Invoices & Sale Certificates)</div>
+            <div class="card-title" id="upload-card-title">2. Upload Tax Invoice(s)</div>
             
-            <!-- Hidden file input using off-screen positioning so it is always accessible to native label clicks -->
             <input type="file" id="file-input" multiple accept=".pdf,.PDF,application/pdf" style="position:fixed; top:-2000px; left:-2000px; opacity:0; pointer-events:none;">
 
             <label for="file-input" class="drop-zone" id="drop-zone">
-                <div class="drop-zone-icon">📄</div>
-                <div class="drop-zone-title">Click anywhere to upload or drag & drop PDF files</div>
-                <div class="drop-zone-desc">Convert Sale Certificates and Tax Invoices together in the same batch!</div>
-                <span class="btn-browse">📁 Browse & Select Files</span>
+                <div class="drop-zone-icon" id="drop-zone-icon">🧾</div>
+                <div class="drop-zone-title" id="drop-zone-title">Click anywhere to select or drag & drop Tax Invoices</div>
+                <div class="drop-zone-desc" id="drop-zone-desc">Original template is 100% preserved with zero font truncation.</div>
+                <span class="btn-browse" id="btn-browse-text">📁 Browse & Select Invoices</span>
             </label>
 
             <div class="file-list" id="file-list"></div>
 
             <button class="btn-convert" id="btn-convert" onclick="startConversion()" disabled>
-                ⚡ Convert All Documents to Annapurna Motors
+                ⚡ Convert Document(s) to Annapurna Motors
             </button>
 
             <div class="progress-box" id="progress-box">
@@ -151,7 +161,7 @@
         <div class="card results-box" id="results-box">
             <div class="card-title">3. Converted Documents</div>
             <div class="success-banner">
-                <div class="success-text" id="success-summary">All files converted successfully!</div>
+                <div class="success-text" id="success-summary">All documents converted successfully!</div>
                 <button class="btn-download-all" id="btn-download-all" onclick="downloadAllAsZip()">📦 Download All as ZIP</button>
             </div>
             <div id="results-list"></div>
@@ -170,17 +180,52 @@
     </div>
 
     <script>
+        let currentMode = 'invoice'; // 'invoice', 'sale-cert', 'batch'
         let selectedFiles = [];
         let convertedResults = [];
 
-        const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('file-input');
+        const dropZone = document.getElementById('drop-zone');
 
-        // File selection handler - native label automatically triggers fileInput
+        function switchMode(mode) {
+            currentMode = mode;
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(mode === 'invoice' ? 'tab-invoice' : (mode === 'sale-cert' ? 'tab-sc' : 'tab-batch')).classList.add('active');
+
+            const uploadTitle = document.getElementById('upload-card-title');
+            const dropIcon = document.getElementById('drop-zone-icon');
+            const dropTitle = document.getElementById('drop-zone-title');
+            const dropDesc = document.getElementById('drop-zone-desc');
+            const browseText = document.getElementById('btn-browse-text');
+
+            if (mode === 'invoice') {
+                uploadTitle.innerText = '2. Upload Tax Invoice(s)';
+                dropIcon.innerText = '🧾';
+                dropTitle.innerText = 'Click anywhere to select or drag & drop Tax Invoices';
+                dropDesc.innerText = 'Original template is 100% preserved with zero font truncation.';
+                browseText.innerText = '📁 Browse & Select Invoices';
+            } else if (mode === 'sale-cert') {
+                uploadTitle.innerText = '2. Upload Sale Certificate(s) - Form 21';
+                dropIcon.innerText = '📜';
+                dropTitle.innerText = 'Click anywhere to select or drag & drop Sale Certificates';
+                dropDesc.innerText = 'Updates top date, delivery clause date, header, and signatory cleanly.';
+                browseText.innerText = '📁 Browse & Select Sale Certificates';
+            } else {
+                uploadTitle.innerText = '2. Upload Invoices & Sale Certificates (Batch)';
+                dropIcon.innerText = '📄';
+                dropTitle.innerText = 'Click anywhere to select or drag & drop files';
+                dropDesc.innerText = 'Convert Tax Invoices and Form 21 Sale Certificates together in one batch!';
+                browseText.innerText = '📁 Browse & Select Files';
+            }
+
+            clearAllFiles();
+        }
+
+        // Native file picker listener
         fileInput.addEventListener('change', function() {
             if (this.files && this.files.length > 0) {
                 addFiles(Array.from(this.files));
-                this.value = ''; // Reset value safely AFTER files are read
+                this.value = '';
             }
         });
 
@@ -218,14 +263,7 @@
         function clearAllFiles() {
             selectedFiles = [];
             renderFileList();
-        }
-
-        function getFileBadge(name) {
-            const lower = name.toLowerCase();
-            if (lower.includes('sale') || lower.includes('cert')) {
-                return '<span class="result-type-tag tag-sc">Sale Certificate</span>';
-            }
-            return '<span class="result-type-tag tag-inv">Tax Invoice</span>';
+            document.getElementById('results-box').style.display = 'none';
         }
 
         function renderFileList() {
@@ -243,7 +281,6 @@
             const itemsHtml = selectedFiles.map((f, i) => `
                 <div class="file-item">
                     <div>
-                        ${getFileBadge(f.name)}
                         <span class="file-name">${f.name}</span>
                         <span class="file-size">(${(f.size / 1024).toFixed(1)} KB)</span>
                     </div>
@@ -253,7 +290,7 @@
 
             list.innerHTML = `
                 <div class="selection-banner">
-                    <span>✅ ${selectedFiles.length} document(s) queued for simultaneous conversion</span>
+                    <span>✅ ${selectedFiles.length} file(s) selected</span>
                     <span style="cursor:pointer; text-decoration:underline; font-size:12px;" onclick="clearAllFiles()">Clear All</span>
                 </div>
                 ${itemsHtml}
@@ -286,19 +323,33 @@
 
                 try {
                     const arrayBuffer = await file.arrayBuffer();
-                    const { blob, docType } = await convertPdfInBrowser(arrayBuffer, file.name, hypo, dateVal);
-                    
+                    let result;
+
+                    if (currentMode === 'invoice') {
+                        result = await convertInvoicePdf(arrayBuffer, file.name, hypo, dateVal);
+                    } else if (currentMode === 'sale-cert') {
+                        result = await convertSaleCertificatePdf(arrayBuffer, file.name, hypo, dateVal);
+                    } else {
+                        // Batch auto-detect
+                        const isSC = isSaleCertificateBuffer(arrayBuffer, file.name);
+                        if (isSC) {
+                            result = await convertSaleCertificatePdf(arrayBuffer, file.name, hypo, dateVal);
+                        } else {
+                            result = await convertInvoicePdf(arrayBuffer, file.name, hypo, dateVal);
+                        }
+                    }
+
                     const dotIdx = file.name.lastIndexOf('.');
                     const stem = dotIdx !== -1 ? file.name.substring(0, dotIdx) : file.name;
                     const ext = dotIdx !== -1 ? file.name.substring(dotIdx) : '.pdf';
                     const convertedName = `${stem}_smn${ext}`;
-                    const url = URL.createObjectURL(blob);
+                    const url = URL.createObjectURL(result.blob);
 
                     convertedResults.push({
                         originalName: file.name,
                         convertedName: convertedName,
-                        docType: docType,
-                        blob: blob,
+                        docType: result.docType,
+                        blob: result.blob,
                         url: url
                     });
                 } catch (err) {
@@ -313,159 +364,176 @@
             renderResults();
         }
 
-        async function convertPdfInBrowser(arrayBuffer, fileName, hypo, newDate) {
+        function isSaleCertificateBuffer(arrayBuffer, fileName) {
+            if (fileName.toLowerCase().includes('sale') || fileName.toLowerCase().includes('cert')) return true;
+            try {
+                const slice = new TextDecoder('latin1').decode(new Uint8Array(arrayBuffer.slice(0, 16384)));
+                if (slice.includes('SALE CERTIFICATE') || slice.includes('Form No') || slice.includes('Form 21')) return true;
+            } catch(e) {}
+            return false;
+        }
+
+        /**
+         * Dedicated Tax Invoice Converter
+         * Strictly isolates all replacements to Page 0.
+         * Exact non-truncating bounding boxes so Invoice # and Mobile # are 100% pristine.
+         */
+        async function convertInvoicePdf(arrayBuffer, fileName, hypo, newDate) {
             const pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer);
             const helv = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
             const helvBold = await pdfDoc.embedFont(PDFLib.StandardFonts.HelveticaBold);
             const pages = pdfDoc.getPages();
 
-            // Instant fast detection of Sale Certificate vs Tax Invoice
-            let isSaleCert = fileName.toLowerCase().includes('sale') || fileName.toLowerCase().includes('cert');
-            try {
-                const headerSlice = new TextDecoder('latin1').decode(new Uint8Array(arrayBuffer.slice(0, 16384)));
-                if (headerSlice.includes('SALE CERTIFICATE') || headerSlice.includes('Form No') || headerSlice.includes('Form 21')) {
-                    isSaleCert = true;
-                }
-            } catch (e) {
-                // fallback to filename detection
-            }
-
-            for (let pIndex = 0; pIndex < pages.length; pIndex++) {
-                const page = pages[pIndex];
+            // CRITICAL: Only process Page 0 (Page 1 is Terms & Conditions and must NEVER be touched)
+            if (pages.length > 0) {
+                const page = pages[0];
                 const pageHeight = page.getHeight();
 
-                if (isSaleCert) {
-                    // --- Sale Certificate Processing ---
-                    // 1. Redact Header on Page 0
-                    if (pIndex === 0) {
-                        page.drawRectangle({
-                            x: 54,
-                            y: pageHeight - 75,
-                            width: 386,
-                            height: 53,
-                            color: PDFLib.rgb(1, 1, 1)
-                        });
+                // 1. Header (Page 0 only)
+                page.drawRectangle({
+                    x: 26.0,
+                    y: pageHeight - 170.0,
+                    width: 414.0,
+                    height: 64.0,
+                    color: PDFLib.rgb(1, 1, 1)
+                });
+                page.drawText('ANNAPURNA MOTORS', { x: 28.35, y: pageHeight - 120.5, size: 9, font: helvBold });
+                page.drawText('Khasra 193/1  Ward 15 Alirajpur Road', { x: 28.35, y: pageHeight - 131.0, size: 9, font: helv });
+                page.drawText('KUKSHI DHAR MADHYA PRADESH 454331 State Code: 23 Contact #     9755820013', { x: 28.35, y: pageHeight - 142.0, size: 9, font: helv });
+                page.drawText('Authorized Dealer: Hero MotoCorp Ltd.', { x: 28.35, y: pageHeight - 153.0, size: 9, font: helvBold });
+                page.drawText('GSTIN #: 23AFTPG6974R1ZE PAN# AFTPG6974R', { x: 28.35, y: pageHeight - 164.0, size: 9, font: helv });
 
-                        page.drawText('ANNAPURNA MOTORS', { x: 56.7, y: pageHeight - 35.0, size: 9, font: helvBold });
-                        page.drawText('Khasra 193/1  Ward 15 Alirajpur Road', { x: 56.7, y: pageHeight - 46.0, size: 9, font: helv });
-                        page.drawText('KUKSHI DHAR MADHYA PRADESH 454331 Contact# 9755820013', { x: 56.7, y: pageHeight - 57.0, size: 9, font: helv });
-                        page.drawText('Authorized Dealer: Hero MotoCorp Ltd.', { x: 56.7, y: pageHeight - 68.0, size: 9, font: helvBold });
-                    }
-
-                    // 2. Hypothecation in Sale Certificate
-                    if (hypo && hypo !== 'KEEP_ORIGINAL') {
-                        page.drawRectangle({
-                            x: 310,
-                            y: pageHeight - 372,
-                            width: 220,
-                            height: 20,
-                            color: PDFLib.rgb(1, 1, 1)
-                        });
-                        if (hypo !== 'BLANK') {
-                            page.drawText(hypo, { x: 326.25, y: pageHeight - 368.5, size: 9, font: helv });
-                        }
-                    }
-
-                    // 3. Date in Sale Certificate
-                    if (newDate && newDate.trim()) {
-                        const m = newDate.match(/\d{2}\/\d{2}\/\d{4}/);
-                        const cleanDate = m ? m[0] : newDate.trim();
-                        // Top date
-                        page.drawRectangle({
-                            x: 508,
-                            y: pageHeight - 134,
-                            width: 72,
-                            height: 18,
-                            color: PDFLib.rgb(1, 1, 1)
-                        });
-                        page.drawText('  ' + cleanDate, { x: 512.1, y: pageHeight - 130.0, size: 9, font: helv });
-
-                        // Delivery clause date
-                        page.drawRectangle({
-                            x: 64,
-                            y: pageHeight - 201,
-                            width: 60,
-                            height: 14,
-                            color: PDFLib.rgb(1, 1, 1)
-                        });
-                        page.drawText(cleanDate, { x: 65.7, y: pageHeight - 198.5, size: 9, font: helv });
-                    }
-
-                    // 4. Signatory in Sale Certificate
+                // 2. Date in Invoice (Page 0 only)
+                // Strictly between y=223.5 and 234.5 from top, so Invoice # (at y<=223.0) is NEVER truncated!
+                if (newDate && newDate.trim()) {
                     page.drawRectangle({
-                        x: 460,
-                        y: pageHeight - 612,
-                        width: 120,
-                        height: 20,
+                        x: 478.0,
+                        y: pageHeight - 234.5,
+                        width: 95.0,
+                        height: 11.0,
                         color: PDFLib.rgb(1, 1, 1)
                     });
-                    const scFooterText = 'For ANNAPURNA MOTORS';
-                    const scLen = helv.widthOfTextAtSize(scFooterText, 9);
-                    page.drawText(scFooterText, { x: 570.0 - scLen, y: pageHeight - 607.0, size: 9, font: helv });
-
-                } else {
-                    // --- Tax Invoice Processing ---
-                    // 1. Redact Header on Page 0
-                    if (pIndex === 0) {
-                        page.drawRectangle({
-                            x: 26,
-                            y: pageHeight - 170,
-                            width: 414,
-                            height: 64,
-                            color: PDFLib.rgb(1, 1, 1)
-                        });
-
-                        page.drawText('ANNAPURNA MOTORS', { x: 28.35, y: pageHeight - 120.5, size: 9, font: helvBold });
-                        page.drawText('Khasra 193/1  Ward 15 Alirajpur Road', { x: 28.35, y: pageHeight - 131.0, size: 9, font: helv });
-                        page.drawText('KUKSHI DHAR MADHYA PRADESH 454331 State Code: 23 Contact #     9755820013', { x: 28.35, y: pageHeight - 142.0, size: 9, font: helv });
-                        page.drawText('Authorized Dealer: Hero MotoCorp Ltd.', { x: 28.35, y: pageHeight - 153.0, size: 9, font: helvBold });
-                        page.drawText('GSTIN #: 23AFTPG6974R1ZE PAN# AFTPG6974R', { x: 28.35, y: pageHeight - 164.0, size: 9, font: helv });
-                    }
-
-                    // 2. Hypothecation in Invoice
-                    if (hypo && hypo !== 'KEEP_ORIGINAL') {
-                        page.drawRectangle({
-                            x: 125,
-                            y: pageHeight - 352,
-                            width: 220,
-                            height: 18,
-                            color: PDFLib.rgb(1, 1, 1)
-                        });
-                        if (hypo !== 'BLANK') {
-                            page.drawText(hypo, { x: 132.30, y: pageHeight - 348.5, size: 9, font: helv });
-                        }
-                    }
-
-                    // 3. Date in Invoice
-                    if (newDate && newDate.trim()) {
-                        page.drawRectangle({
-                            x: 478,
-                            y: pageHeight - 236,
-                            width: 95,
-                            height: 16,
-                            color: PDFLib.rgb(1, 1, 1)
-                        });
-                        page.drawText(newDate.trim(), { x: 480.0, y: pageHeight - 233.5, size: 9, font: helv });
-                    }
-
-                    // 4. Signatory in Invoice
-                    page.drawRectangle({
-                        x: 440,
-                        y: pageHeight - 651,
-                        width: 145,
-                        height: 18,
-                        color: PDFLib.rgb(1, 1, 1)
-                    });
-                    const invFooterText = 'For ANNAPURNA MOTORS';
-                    const invLen = helv.widthOfTextAtSize(invFooterText, 9);
-                    page.drawText(invFooterText, { x: 577.05 - invLen, y: pageHeight - 647.5, size: 9, font: helv });
+                    page.drawText(' ' + newDate.trim(), { x: 479.8, y: pageHeight - 232.17, size: 9, font: helv });
                 }
+
+                // 3. Hypothecation in Invoice (Page 0 only)
+                // Strictly between y=338.0 and 348.8 from top, so Mobile # (at y<=337.5) is NEVER truncated!
+                if (hypo && hypo !== 'KEEP_ORIGINAL') {
+                    page.drawRectangle({
+                        x: 125.0,
+                        y: pageHeight - 348.8,
+                        width: 235.0,
+                        height: 10.8,
+                        color: PDFLib.rgb(1, 1, 1)
+                    });
+                    if (hypo !== 'BLANK') {
+                        page.drawText(hypo.trim(), { x: 132.30, y: pageHeight - 346.64, size: 9, font: helv });
+                    }
+                }
+
+                // 4. Signatory in Invoice (Page 0 only)
+                page.drawRectangle({
+                    x: 440.0,
+                    y: pageHeight - 610.0,
+                    width: 145.0,
+                    height: 15.0,
+                    color: PDFLib.rgb(1, 1, 1)
+                });
+                const invFooterText = 'For ANNAPURNA MOTORS';
+                const invLen = helv.widthOfTextAtSize(invFooterText, 9);
+                page.drawText(invFooterText, { x: 577.05 - invLen, y: pageHeight - 604.5, size: 9, font: helv });
             }
 
             const modifiedPdfBytes = await pdfDoc.save();
             return {
                 blob: new Blob([modifiedPdfBytes], { type: 'application/pdf' }),
-                docType: isSaleCert ? 'sale_certificate' : 'invoice'
+                docType: 'invoice'
+            };
+        }
+
+        /**
+         * Dedicated Sale Certificate (Form 21) Converter
+         * Precise non-truncating bounding boxes for Sale Certificate.
+         */
+        async function convertSaleCertificatePdf(arrayBuffer, fileName, hypo, newDate) {
+            const pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer);
+            const helv = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
+            const helvBold = await pdfDoc.embedFont(PDFLib.StandardFonts.HelveticaBold);
+            const pages = pdfDoc.getPages();
+
+            if (pages.length > 0) {
+                const page = pages[0];
+                const pageHeight = page.getHeight();
+
+                // 1. Header (Page 0 only)
+                page.drawRectangle({
+                    x: 54.0,
+                    y: pageHeight - 75.0,
+                    width: 386.0,
+                    height: 51.0,
+                    color: PDFLib.rgb(1, 1, 1)
+                });
+                page.drawText('ANNAPURNA MOTORS', { x: 56.7, y: pageHeight - 35.0, size: 9, font: helvBold });
+                page.drawText('Khasra 193/1  Ward 15 Alirajpur Road', { x: 56.7, y: pageHeight - 46.0, size: 9, font: helv });
+                page.drawText('KUKSHI DHAR MADHYA PRADESH 454331 Contact# 9755820013', { x: 56.7, y: pageHeight - 57.0, size: 9, font: helv });
+                page.drawText('Authorized Dealer: Hero MotoCorp Ltd.', { x: 56.7, y: pageHeight - 68.0, size: 9, font: helvBold });
+
+                // 2. Top Right Date: strictly y=121.0 to 133.0
+                if (newDate && newDate.trim()) {
+                    const m = newDate.match(/\d{2}\/\d{2}\/\d{4}/);
+                    const cleanDate = m ? m[0] : newDate.trim();
+
+                    page.drawRectangle({
+                        x: 510.0,
+                        y: pageHeight - 133.0,
+                        width: 72.0,
+                        height: 12.0,
+                        color: PDFLib.rgb(1, 1, 1)
+                    });
+                    page.drawText('  ' + cleanDate, { x: 512.1, y: pageHeight - 130.19, size: 9, font: helv });
+
+                    // Body clause date: strictly y=190.0 to 200.0, x=64.0 to 115.0
+                    page.drawRectangle({
+                        x: 64.0,
+                        y: pageHeight - 200.0,
+                        width: 52.0,
+                        height: 10.0,
+                        color: PDFLib.rgb(1, 1, 1)
+                    });
+                    page.drawText(cleanDate, { x: 65.7, y: pageHeight - 197.83, size: 9, font: helv });
+                }
+
+                // 3. Hypothecation: strictly y=357.0 to 369.0, x=320.0 to 530.0
+                if (hypo && hypo !== 'KEEP_ORIGINAL') {
+                    page.drawRectangle({
+                        x: 320.0,
+                        y: pageHeight - 369.0,
+                        width: 210.0,
+                        height: 12.0,
+                        color: PDFLib.rgb(1, 1, 1)
+                    });
+                    if (hypo !== 'BLANK') {
+                        page.drawText(hypo.trim(), { x: 326.25, y: pageHeight - 366.27, size: 9, font: helv });
+                    }
+                }
+
+                // 4. Signatory: strictly y=594.0 to 610.0
+                page.drawRectangle({
+                    x: 460.0,
+                    y: pageHeight - 610.0,
+                    width: 120.0,
+                    height: 16.0,
+                    color: PDFLib.rgb(1, 1, 1)
+                });
+                const scFooterText = 'For ANNAPURNA MOTORS';
+                const scLen = helv.widthOfTextAtSize(scFooterText, 9);
+                page.drawText(scFooterText, { x: 570.0 - scLen, y: pageHeight - 605.0, size: 9, font: helv });
+            }
+
+            const modifiedPdfBytes = await pdfDoc.save();
+            return {
+                blob: new Blob([modifiedPdfBytes], { type: 'application/pdf' }),
+                docType: 'sale_certificate'
             };
         }
 
@@ -485,23 +553,24 @@
                     : '<span class="result-type-tag tag-inv">Tax Invoice</span>';
 
                 return `
-                <div class="result-item">
-                    <div>
-                        <div>${typeTag}<strong>${r.convertedName}</strong></div>
+                    <div class="result-item">
+                        <div>
+                            ${typeTag}
+                            <strong>${r.convertedName}</strong>
+                        </div>
+                        <div class="result-actions">
+                            <button class="btn-link btn-preview" onclick="openPreview(${i})">👁 Preview</button>
+                            <button class="btn-link btn-download" onclick="downloadSingle(${i})">⬇ Download</button>
+                        </div>
                     </div>
-                    <div class="result-actions">
-                        <button class="btn-link btn-preview" onclick="openPreview(${i})">👁 Preview</button>
-                        <a href="${r.url}" download="${r.convertedName}" class="btn-link btn-download">⬇ Download</a>
-                    </div>
-                </div>
                 `;
             }).join('');
         }
 
         function openPreview(index) {
-            const r = convertedResults[index];
-            document.getElementById('preview-filename').innerText = 'Preview: ' + r.convertedName;
-            document.getElementById('preview-iframe').src = r.url;
+            const item = convertedResults[index];
+            document.getElementById('preview-filename').innerText = item.convertedName;
+            document.getElementById('preview-iframe').src = item.url;
             document.getElementById('preview-modal').style.display = 'flex';
         }
 
@@ -510,13 +579,18 @@
             document.getElementById('preview-iframe').src = '';
         }
 
+        function downloadSingle(index) {
+            const item = convertedResults[index];
+            saveAs(item.blob, item.convertedName);
+        }
+
         async function downloadAllAsZip() {
             const zip = new JSZip();
             convertedResults.forEach(r => {
                 zip.file(r.convertedName, r.blob);
             });
             const content = await zip.generateAsync({ type: 'blob' });
-            saveAs(content, 'converted_annapurna_documents.zip');
+            saveAs(content, 'annapurna_motors_documents.zip');
         }
     </script>
 </body>
