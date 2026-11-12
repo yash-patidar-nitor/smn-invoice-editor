@@ -1,7 +1,8 @@
 """
 Hero Invoice & Sale Certificate Converter - Web Application Server
 Flask-based responsive web app with drag-and-drop conversion,
-live PDF preview, batch processing, Hypothecation dropdown, Date picker, and ZIP download.
+live PDF preview, simultaneous batch processing of Invoices and Sale Certificates,
+Hypothecation dropdown, Date picker, and ZIP download.
 """
 
 import os
@@ -60,17 +61,21 @@ HTML_TEMPLATE = """
         .form-control { width: 100%; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--text-dark); background: #fff; transition: border-color 0.2s; outline: none; }
         .form-control:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,0.1); }
 
-        .drop-zone { border: 2px dashed #cbd5e1; border-radius: var(--radius); padding: 36px 20px; text-align: center; cursor: pointer; transition: all 0.2s; background: #f8fafc; }
+        .drop-zone { border: 2px dashed #cbd5e1; border-radius: var(--radius); padding: 32px 20px; text-align: center; cursor: pointer; transition: all 0.2s; background: #f8fafc; }
         .drop-zone:hover, .drop-zone.dragover { border-color: var(--primary); background: #eff6ff; }
-        .drop-zone-icon { font-size: 36px; margin-bottom: 8px; }
+        .drop-zone-icon { font-size: 38px; margin-bottom: 8px; }
         .drop-zone-title { font-size: 15px; font-weight: 600; color: var(--text-dark); }
         .drop-zone-desc { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+        .btn-browse { display: inline-block; margin-top: 12px; background: #eff6ff; color: var(--primary); border: 1px solid #bfdbfe; border-radius: 6px; padding: 8px 18px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .btn-browse:hover { background: #dbeafe; }
         
-        .file-list { margin-top: 14px; display: none; }
+        .file-list { margin-top: 16px; display: none; }
+        .selection-banner { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #1e40af; font-weight: 500; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
         .file-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: #f1f5f9; border-radius: 8px; margin-bottom: 6px; font-size: 13px; }
         .file-name { font-weight: 500; color: var(--text-dark); }
-        .file-size { color: var(--text-muted); font-size: 12px; }
-        .file-remove { color: #ef4444; cursor: pointer; font-weight: 600; padding: 2px 6px; }
+        .file-size { color: var(--text-muted); font-size: 12px; margin-left: 6px; }
+        .file-remove { color: #ef4444; cursor: pointer; font-weight: 600; padding: 2px 8px; border-radius: 4px; }
+        .file-remove:hover { background: #fee2e2; }
 
         .btn-convert { width: 100%; background: var(--primary); color: #fff; border: none; padding: 14px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.2s; margin-top: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; }
         .btn-convert:hover { background: var(--primary-hover); }
@@ -91,6 +96,7 @@ HTML_TEMPLATE = """
         .result-type-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; margin-right: 6px; }
         .tag-inv { background: #e0e7ff; color: #4338ca; }
         .tag-sc { background: #fef3c7; color: #b45309; }
+        .tag-both { background: #dcfce7; color: #15803d; }
         .result-actions { display: flex; gap: 8px; }
         .btn-link { font-size: 12px; font-weight: 600; text-decoration: none; padding: 6px 12px; border-radius: 4px; border: none; cursor: pointer; }
         .btn-preview { background: #eff6ff; color: var(--primary); }
@@ -108,8 +114,8 @@ HTML_TEMPLATE = """
     <div class="container">
         <div class="header">
             <span class="badge">Shanti Motors ➔ Annapurna Motors</span>
-            <h1 class="title">Invoice & Sale Certificate Converter</h1>
-            <p class="subtitle">Converts Tax Invoices and Sale Certificates with customizable Bank Hypothecation & Date</p>
+            <h1 class="title">Hero Document Converter</h1>
+            <p class="subtitle">Convert Invoices & Sale Certificates simultaneously to Annapurna Motors format</p>
         </div>
 
         <div class="card">
@@ -135,18 +141,22 @@ HTML_TEMPLATE = """
         </div>
 
         <div class="card">
-            <div class="card-title">2. Upload PDFs</div>
-            <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+            <div class="card-title">2. Upload PDFs (Invoices & Sale Certificates)</div>
+            
+            <!-- Hidden file input placed outside drop-zone to prevent bubbling issues -->
+            <input type="file" id="file-input" multiple accept=".pdf,.PDF,application/pdf" style="display:none">
+
+            <div class="drop-zone" id="drop-zone">
                 <div class="drop-zone-icon">📄</div>
                 <div class="drop-zone-title">Click to upload or drag & drop PDF files</div>
-                <div class="drop-zone-desc">Supports both Tax Invoices and Form 21 Sale Certificates (Single or Batch)</div>
-                <input type="file" id="file-input" multiple accept=".pdf" style="display:none" onchange="handleFileSelect(event)">
+                <div class="drop-zone-desc">You can upload Invoices AND Sale Certificates together in the same batch!</div>
+                <button type="button" class="btn-browse" id="btn-browse">📁 Browse & Select Files</button>
             </div>
 
             <div class="file-list" id="file-list"></div>
 
             <button class="btn-convert" id="btn-convert" onclick="startConversion()" disabled>
-                ⚡ Convert to Annapurna Motors
+                ⚡ Convert All Documents to Annapurna Motors
             </button>
 
             <div class="progress-box" id="progress-box">
@@ -160,7 +170,7 @@ HTML_TEMPLATE = """
         <div class="card results-box" id="results-box">
             <div class="card-title">3. Converted Documents</div>
             <div class="success-banner">
-                <div class="success-text" id="success-summary">All files converted successfully!</div>
+                <div class="success-text" id="success-summary">All documents converted successfully!</div>
                 <a href="#" class="btn-download-all" id="btn-download-all">📦 Download All as ZIP</a>
             </div>
             <div id="results-list"></div>
@@ -182,29 +192,49 @@ HTML_TEMPLATE = """
         let selectedFiles = [];
 
         const dropZone = document.getElementById('drop-zone');
-        ['dragenter', 'dragover'].forEach(name => {
-            dropZone.addEventListener(name, (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        const fileInput = document.getElementById('file-input');
+        const btnBrowse = document.getElementById('btn-browse');
+
+        btnBrowse.addEventListener('click', (e) => {
+            e.stopPropagation();
+            fileInput.click();
         });
-        ['dragleave', 'drop'].forEach(name => {
-            dropZone.addEventListener(name, (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); });
+
+        dropZone.addEventListener('click', () => {
+            fileInput.click();
         });
+
+        fileInput.addEventListener('click', function() {
+            this.value = '';
+        });
+
+        fileInput.addEventListener('change', function() {
+            if (this.files && this.files.length > 0) {
+                addFiles(Array.from(this.files));
+            }
+        });
+
+        window.addEventListener('dragover', (e) => e.preventDefault());
+        window.addEventListener('drop', (e) => e.preventDefault());
+
+        dropZone.addEventListener('dragenter', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); });
         dropZone.addEventListener('drop', (e) => {
-            if (e.dataTransfer.files) {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer && e.dataTransfer.files) {
                 addFiles(Array.from(e.dataTransfer.files));
             }
         });
 
-        function handleFileSelect(e) {
-            if (e.target.files) {
-                addFiles(Array.from(e.target.files));
-            }
-        }
-
         function addFiles(files) {
-            const pdfs = files.filter(f => f.name.toLowerCase().endsWith('.pdf'));
-            pdfs.forEach(f => {
-                if (!selectedFiles.some(existing => existing.name === f.name)) {
-                    selectedFiles.push(f);
+            files.forEach(f => {
+                const lower = f.name.toLowerCase();
+                if (lower.endsWith('.pdf')) {
+                    if (!selectedFiles.some(existing => existing.name === f.name)) {
+                        selectedFiles.push(f);
+                    }
                 }
             });
             renderFileList();
@@ -213,6 +243,19 @@ HTML_TEMPLATE = """
         function removeFile(index) {
             selectedFiles.splice(index, 1);
             renderFileList();
+        }
+
+        function clearAllFiles() {
+            selectedFiles = [];
+            renderFileList();
+        }
+
+        function getFileBadge(name) {
+            const lower = name.toLowerCase();
+            if (lower.includes('sale') || lower.includes('cert')) {
+                return '<span class="result-type-tag tag-sc">Sale Certificate</span>';
+            }
+            return '<span class="result-type-tag tag-inv">Tax Invoice</span>';
         }
 
         function renderFileList() {
@@ -226,15 +269,25 @@ HTML_TEMPLATE = """
             }
             list.style.display = 'block';
             btn.disabled = false;
-            list.innerHTML = selectedFiles.map((f, i) => `
+
+            const itemsHtml = selectedFiles.map((f, i) => `
                 <div class="file-item">
                     <div>
+                        ${getFileBadge(f.name)}
                         <span class="file-name">${f.name}</span>
                         <span class="file-size">(${(f.size / 1024).toFixed(1)} KB)</span>
                     </div>
                     <span class="file-remove" onclick="removeFile(${i})">&times; Remove</span>
                 </div>
             `).join('');
+
+            list.innerHTML = `
+                <div class="selection-banner">
+                    <span>✅ ${selectedFiles.length} document(s) queued for simultaneous conversion</span>
+                    <span style="cursor:pointer; text-decoration:underline; font-size:12px;" onclick="clearAllFiles()">Clear All</span>
+                </div>
+                ${itemsHtml}
+            `;
         }
 
         async function startConversion() {
@@ -253,7 +306,7 @@ HTML_TEMPLATE = """
             progressBox.style.display = 'block';
             resultsBox.style.display = 'none';
             progressFill.style.width = '30%';
-            progressStatus.innerText = 'Uploading and processing documents...';
+            progressStatus.innerText = `Processing ${selectedFiles.length} document(s)...`;
 
             const formData = new FormData();
             formData.append('hypothecation', hypo);
@@ -265,12 +318,13 @@ HTML_TEMPLATE = """
                 progressFill.style.width = '80%';
                 
                 if (!response.ok) {
-                    throw new Error('Conversion failed on server');
+                    const errJson = await response.json().catch(() => ({}));
+                    throw new Error(errJson.error || 'Conversion failed on server');
                 }
 
                 const data = await response.json();
                 progressFill.style.width = '100%';
-                progressStatus.innerText = 'Conversion completed!';
+                progressStatus.innerText = 'Conversion completed successfully!';
 
                 renderResults(data);
             } catch (err) {
@@ -292,9 +346,12 @@ HTML_TEMPLATE = """
             btnZip.style.display = data.files.length > 1 ? 'inline-flex' : 'none';
 
             list.innerHTML = data.files.map(f => {
-                const typeTag = f.doc_type === 'sale_certificate' 
-                    ? '<span class="result-type-tag tag-sc">Sale Certificate</span>'
-                    : '<span class="result-type-tag tag-inv">Tax Invoice</span>';
+                let typeTag = '<span class="result-type-tag tag-inv">Tax Invoice</span>';
+                if (f.doc_type === 'sale_certificate') {
+                    typeTag = '<span class="result-type-tag tag-sc">Sale Certificate</span>';
+                } else if (f.doc_type === 'both') {
+                    typeTag = '<span class="result-type-tag tag-both">Invoice + Certificate</span>';
+                }
 
                 return `
                 <div class="result-item">

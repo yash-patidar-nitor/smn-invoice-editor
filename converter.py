@@ -288,26 +288,111 @@ def convert_sale_certificate(doc: fitz.Document, hypothecation: str = None, new_
 def convert_document(input_path: str, output_path: str, hypothecation: str = None, new_date: str = None) -> dict:
     """
     Main conversion entry point.
-    Automatically detects whether the document is a Tax Invoice or Sale Certificate,
-    then executes high-precision redaction, header replacement, footer alignment,
-    hypothecation bank updating, and date changes.
+    Processes each page individually, accurately handling standalone Tax Invoices,
+    standalone Form 21 Sale Certificates, or multi-page documents containing BOTH!
     """
     doc = fitz.open(input_path)
     total_pages = len(doc)
-    doc_type = detect_document_type(doc)
+    headers_replaced = 0
+    footers_replaced = 0
+    types_found = set()
 
-    if doc_type == "sale_certificate":
-        stats = convert_sale_certificate(doc, hypothecation=hypothecation, new_date=new_date)
-    else:
-        stats = convert_invoice(doc, hypothecation=hypothecation, new_date=new_date)
+    for page in doc:
+        page_text = page.get_text()
+        if "SALE CERTIFICATE" in page_text or "Form No .21" in page_text:
+            types_found.add("sale_certificate")
+            # --- Sale Certificate Processing ---
+            shanti_hits = [h for h in page.search_for("Shanti Motors") if h.y0 < 100]
+            if not shanti_hits:
+                shanti_hits = [h for h in page.search_for("SHANTI MOTORS") if h.y0 < 100]
+
+            if shanti_hits:
+                page.add_redact_annot(fitz.Rect(54.0, 22.0, 440.0, 75.0), fill=(1, 1, 1))
+                page.apply_redactions()
+                cfg = ANNAPURNA_SC_CONFIG
+                page.insert_text((56.7, 35.0), cfg["dealer_name"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                page.insert_text((56.7, 46.0), cfg["address_line1"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                page.insert_text((56.7, 57.0), cfg["address_line2"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                page.insert_text((56.7, 68.0), cfg["dealer_auth"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                headers_replaced += 1
+
+            if hypothecation:
+                update_hypothecation_sale_certificate(page, hypothecation)
+
+            if new_date:
+                update_date_sale_certificate(page, new_date)
+
+            footer_hits = [h for h in page.search_for("Shanti Motors") if h.y0 > 200]
+            if not footer_hits:
+                footer_hits = [h for h in page.search_for("SHANTI MOTORS") if h.y0 > 200]
+
+            for rect in footer_hits:
+                expanded_rect = fitz.Rect(rect.x0 - 55, rect.y0 - 2, rect.x1 + 30, rect.y1 + 2)
+                page.add_redact_annot(expanded_rect, fill=(1, 1, 1))
+                page.apply_redactions()
+                footer_text = ANNAPURNA_SC_CONFIG["footer_signatory"]
+                text_len = fitz.get_text_length(footer_text, fontname="helv", fontsize=9.0)
+                target_x = max(56.7, 570.0 - text_len)
+                page.insert_text((target_x, 605.0), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                footers_replaced += 1
+
+        else:
+            types_found.add("invoice")
+            # --- Tax Invoice Processing ---
+            shanti_hits = page.search_for("SHANTI MOTORS")
+            gstin_hits = page.search_for("23AQMPP0120E1ZE")
+            header_hit = any(h.y0 < 200 for h in shanti_hits)
+
+            if header_hit or (gstin_hits and gstin_hits[0].y0 < 200):
+                header_rect = fitz.Rect(26.0, 106.0, 440.0, 170.0)
+                page.add_redact_annot(header_rect, fill=(1, 1, 1))
+                page.apply_redactions()
+                cfg = ANNAPURNA_INVOICE_CONFIG
+                page.insert_text((28.35, 120.5), cfg["dealer_name"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                page.insert_text((28.35, 131.0), cfg["address_line1"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                page.insert_text((28.35, 142.0), cfg["address_line2"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                page.insert_text((28.35, 153.0), cfg["dealer_auth"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                page.insert_text((28.35, 164.0), cfg["gstin_pan"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                headers_replaced += 1
+
+            if hypothecation:
+                update_hypothecation_invoice(page, hypothecation)
+
+            if new_date:
+                update_date_invoice(page, new_date)
+
+            footer_hits = [h for h in page.search_for("SHANTI MOTORS") if h.y0 > 200]
+            if not footer_hits:
+                footer_hits = [h for h in page.search_for("M/S.SHANTI MOTORS") if h.y0 > 200]
+
+            for rect in footer_hits:
+                expanded_rect = fitz.Rect(rect.x0 - 55, rect.y0 - 2, rect.x1 + 30, rect.y1 + 2)
+                page.add_redact_annot(expanded_rect, fill=(1, 1, 1))
+                page.apply_redactions()
+                footer_text = ANNAPURNA_INVOICE_CONFIG["footer_signatory"]
+                text_len = fitz.get_text_length(footer_text, fontname="helv", fontsize=9.0)
+                target_x = max(28.35, 577.05 - text_len)
+                page.insert_text((target_x, rect.y1 - 1.5), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                footers_replaced += 1
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     doc.save(output_path, garbage=4, deflate=True)
     doc.close()
 
-    stats["pages_processed"] = total_pages
-    stats["status"] = "success"
-    return stats
+    if "sale_certificate" in types_found and "invoice" in types_found:
+        final_type = "both"
+    elif "sale_certificate" in types_found:
+        final_type = "sale_certificate"
+    else:
+        final_type = "invoice"
+
+    return {
+        "doc_type": final_type,
+        "pages_processed": total_pages,
+        "headers_replaced": headers_replaced,
+        "footers_replaced": footers_replaced,
+        "status": "success"
+    }
 
 
 # Aliases for backward compatibility

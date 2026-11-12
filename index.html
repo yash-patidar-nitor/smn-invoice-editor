@@ -43,17 +43,21 @@
         .form-control { width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--text); background: #fff; outline: none; transition: border-color 0.2s; }
         .form-control:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,0.1); }
 
-        .drop-zone { border: 2px dashed #cbd5e1; border-radius: var(--radius); padding: 36px 20px; text-align: center; cursor: pointer; background: #f8fafc; transition: all 0.2s; }
+        .drop-zone { border: 2px dashed #cbd5e1; border-radius: var(--radius); padding: 32px 20px; text-align: center; cursor: pointer; background: #f8fafc; transition: all 0.2s; }
         .drop-zone:hover, .drop-zone.dragover { border-color: var(--primary); background: #eff6ff; }
-        .drop-zone-icon { font-size: 36px; margin-bottom: 8px; }
+        .drop-zone-icon { font-size: 38px; margin-bottom: 8px; }
         .drop-zone-title { font-size: 15px; font-weight: 600; color: var(--text); }
         .drop-zone-desc { font-size: 13px; color: var(--muted); margin-top: 4px; }
+        .btn-browse { display: inline-block; margin-top: 12px; background: #eff6ff; color: var(--primary); border: 1px solid #bfdbfe; border-radius: 6px; padding: 8px 18px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .btn-browse:hover { background: #dbeafe; }
 
-        .file-list { margin-top: 14px; display: none; }
+        .file-list { margin-top: 16px; display: none; }
+        .selection-banner { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #1e40af; font-weight: 500; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
         .file-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: #f1f5f9; border-radius: 8px; margin-bottom: 6px; font-size: 13px; }
         .file-name { font-weight: 500; color: var(--text); }
-        .file-size { color: var(--muted); font-size: 12px; }
-        .file-remove { color: #ef4444; cursor: pointer; font-weight: 600; }
+        .file-size { color: var(--muted); font-size: 12px; margin-left: 6px; }
+        .file-remove { color: #ef4444; cursor: pointer; font-weight: 600; padding: 2px 8px; border-radius: 4px; }
+        .file-remove:hover { background: #fee2e2; }
 
         .btn-convert { width: 100%; background: var(--primary); color: #fff; border: none; padding: 14px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; }
         .btn-convert:hover { background: var(--primary-hover); }
@@ -74,6 +78,7 @@
         .result-type-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; margin-right: 6px; }
         .tag-inv { background: #e0e7ff; color: #4338ca; }
         .tag-sc { background: #fef3c7; color: #b45309; }
+        .tag-both { background: #dcfce7; color: #15803d; }
         .result-actions { display: flex; gap: 8px; }
         .btn-link { font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 4px; border: none; cursor: pointer; text-decoration: none; }
         .btn-preview { background: #eff6ff; color: var(--primary); }
@@ -91,8 +96,8 @@
     <div class="container">
         <div class="header">
             <span class="badge">Shanti Motors ➔ Annapurna Motors</span>
-            <h1 class="title">Hero Invoice & Sale Certificate Converter</h1>
-            <p class="subtitle">Converts Tax Invoices and Sale Certificates with Bank Hypothecation & Date control</p>
+            <h1 class="title">Hero Document Converter</h1>
+            <p class="subtitle">Convert Invoices & Sale Certificates simultaneously to Annapurna Motors format</p>
         </div>
 
         <div class="card">
@@ -118,18 +123,21 @@
         </div>
 
         <div class="card">
-            <div class="card-title">2. Upload PDFs</div>
-            <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+            <div class="card-title">2. Upload PDFs (Invoices & Sale Certificates)</div>
+            
+            <input type="file" id="file-input" multiple accept=".pdf,.PDF,application/pdf" style="display:none">
+
+            <div class="drop-zone" id="drop-zone">
                 <div class="drop-zone-icon">📄</div>
                 <div class="drop-zone-title">Click to upload or drag & drop PDF files</div>
-                <div class="drop-zone-desc">Supports both Tax Invoices and Form 21 Sale Certificates</div>
-                <input type="file" id="file-input" multiple accept=".pdf" style="display:none" onchange="handleFileSelect(event)">
+                <div class="drop-zone-desc">Convert Sale Certificates and Tax Invoices together in the same batch!</div>
+                <button type="button" class="btn-browse" id="btn-browse">📁 Browse & Select Files</button>
             </div>
 
             <div class="file-list" id="file-list"></div>
 
             <button class="btn-convert" id="btn-convert" onclick="startConversion()" disabled>
-                ⚡ Convert to Annapurna Motors
+                ⚡ Convert All Documents to Annapurna Motors
             </button>
 
             <div class="progress-box" id="progress-box">
@@ -162,32 +170,59 @@
     </div>
 
     <script>
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        // Disable external worker to avoid cross-origin / file:// security errors
+        if (typeof pdfjsLib !== 'undefined') {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+        }
 
         let selectedFiles = [];
         let convertedResults = [];
 
         const dropZone = document.getElementById('drop-zone');
-        ['dragenter', 'dragover'].forEach(name => {
-            dropZone.addEventListener(name, (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        const fileInput = document.getElementById('file-input');
+        const btnBrowse = document.getElementById('btn-browse');
+
+        btnBrowse.addEventListener('click', (e) => {
+            e.stopPropagation();
+            fileInput.click();
         });
-        ['dragleave', 'drop'].forEach(name => {
-            dropZone.addEventListener(name, (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); });
+
+        dropZone.addEventListener('click', () => {
+            fileInput.click();
         });
+
+        fileInput.addEventListener('click', function() {
+            this.value = '';
+        });
+
+        fileInput.addEventListener('change', function() {
+            if (this.files && this.files.length > 0) {
+                addFiles(Array.from(this.files));
+            }
+        });
+
+        window.addEventListener('dragover', (e) => e.preventDefault());
+        window.addEventListener('drop', (e) => e.preventDefault());
+
+        dropZone.addEventListener('dragenter', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); });
         dropZone.addEventListener('drop', (e) => {
             e.preventDefault();
             dropZone.classList.remove('dragover');
-            if (e.dataTransfer.files) addFiles(Array.from(e.dataTransfer.files));
+            if (e.dataTransfer && e.dataTransfer.files) {
+                addFiles(Array.from(e.dataTransfer.files));
+            }
         });
 
-        function handleFileSelect(e) {
-            if (e.target.files) addFiles(Array.from(e.target.files));
-        }
-
         function addFiles(files) {
-            const pdfs = files.filter(f => f.name.toLowerCase().endsWith('.pdf'));
-            pdfs.forEach(f => {
-                if (!selectedFiles.some(existing => existing.name === f.name)) selectedFiles.push(f);
+            files.forEach(f => {
+                const lower = f.name.toLowerCase();
+                if (lower.endsWith('.pdf')) {
+                    if (!selectedFiles.some(existing => existing.name === f.name)) {
+                        selectedFiles.push(f);
+                    }
+                }
             });
             renderFileList();
         }
@@ -195,6 +230,19 @@
         function removeFile(i) {
             selectedFiles.splice(i, 1);
             renderFileList();
+        }
+
+        function clearAllFiles() {
+            selectedFiles = [];
+            renderFileList();
+        }
+
+        function getFileBadge(name) {
+            const lower = name.toLowerCase();
+            if (lower.includes('sale') || lower.includes('cert')) {
+                return '<span class="result-type-tag tag-sc">Sale Certificate</span>';
+            }
+            return '<span class="result-type-tag tag-inv">Tax Invoice</span>';
         }
 
         function renderFileList() {
@@ -208,15 +256,25 @@
             }
             list.style.display = 'block';
             btn.disabled = false;
-            list.innerHTML = selectedFiles.map((f, i) => `
+
+            const itemsHtml = selectedFiles.map((f, i) => `
                 <div class="file-item">
                     <div>
+                        ${getFileBadge(f.name)}
                         <span class="file-name">${f.name}</span>
                         <span class="file-size">(${(f.size / 1024).toFixed(1)} KB)</span>
                     </div>
                     <span class="file-remove" onclick="removeFile(${i})">&times; Remove</span>
                 </div>
             `).join('');
+
+            list.innerHTML = `
+                <div class="selection-banner">
+                    <span>✅ ${selectedFiles.length} document(s) queued for simultaneous conversion</span>
+                    <span style="cursor:pointer; text-decoration:underline; font-size:12px;" onclick="clearAllFiles()">Clear All</span>
+                </div>
+                ${itemsHtml}
+            `;
         }
 
         async function startConversion() {
@@ -245,7 +303,8 @@
 
                 try {
                     const arrayBuffer = await file.arrayBuffer();
-                    const { blob, docType } = await convertPdfInBrowser(arrayBuffer, hypo, dateVal);
+                    const { blob, docType } = await convertPdfInBrowser(arrayBuffer, file.name, hypo, dateVal);
+                    
                     const dotIdx = file.name.lastIndexOf('.');
                     const stem = dotIdx !== -1 ? file.name.substring(0, dotIdx) : file.name;
                     const ext = dotIdx !== -1 ? file.name.substring(dotIdx) : '.pdf';
@@ -260,7 +319,8 @@
                         url: url
                     });
                 } catch (err) {
-                    console.error('Conversion error:', err);
+                    console.error('Conversion error for ' + file.name + ':', err);
+                    alert('Error converting ' + file.name + ': ' + err.message);
                 }
             }
 
@@ -270,24 +330,33 @@
             renderResults();
         }
 
-        async function convertPdfInBrowser(arrayBuffer, hypo, newDate) {
+        async function convertPdfInBrowser(arrayBuffer, fileName, hypo, newDate) {
             const pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer);
             const helv = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
             const helvBold = await pdfDoc.embedFont(PDFLib.StandardFonts.HelveticaBold);
             const pages = pdfDoc.getPages();
 
-            const pdfJsDoc = await pdfjsLib.getDocument({ data: arrayBuffer.slice(0) }).promise;
-            const firstPage = await pdfJsDoc.getPage(1);
-            const firstTextContent = await firstPage.getTextContent();
-            const firstPageStrings = firstTextContent.items.map(it => it.str).join(' ');
+            // Check if document is a Sale Certificate by filename or content
+            let isSaleCert = fileName.toLowerCase().includes('sale') || fileName.toLowerCase().includes('cert');
 
-            const isSaleCert = firstPageStrings.includes('SALE CERTIFICATE') || firstPageStrings.includes('Form No .21');
+            // Try to extract text with pdfjs if available
+            try {
+                if (typeof pdfjsLib !== 'undefined') {
+                    const pdfJsDoc = await pdfjsLib.getDocument({ data: arrayBuffer.slice(0) }).promise;
+                    const firstPage = await pdfJsDoc.getPage(1);
+                    const firstText = await firstPage.getTextContent();
+                    const textJoined = firstText.items.map(it => it.str).join(' ');
+                    if (textJoined.includes('SALE CERTIFICATE') || textJoined.includes('Form No .21')) {
+                        isSaleCert = true;
+                    }
+                }
+            } catch (e) {
+                console.warn('PDF.js text inspection fallback:', e);
+            }
 
             for (let pIndex = 0; pIndex < pages.length; pIndex++) {
                 const page = pages[pIndex];
                 const pageHeight = page.getHeight();
-                const jsPage = await pdfJsDoc.getPage(pIndex + 1);
-                const textContent = await jsPage.getTextContent();
 
                 if (isSaleCert) {
                     // --- Sale Certificate Processing ---
@@ -309,59 +378,53 @@
 
                     // 2. Hypothecation in Sale Certificate
                     if (hypo && hypo !== 'KEEP_ORIGINAL') {
-                        for (const it of textContent.items) {
-                            if (it.str.includes('hypothecation with') || it.str.includes('HERO FINCORP')) {
-                                const fy = it.transform[5];
-                                page.drawRectangle({
-                                    x: 310,
-                                    y: fy - 4,
-                                    width: 220,
-                                    height: 18,
-                                    color: PDFLib.rgb(1, 1, 1)
-                                });
-                                if (hypo !== 'BLANK') {
-                                    page.drawText(hypo, { x: 326.25, y: fy, size: 9, font: helv });
-                                }
-                                break;
-                            }
+                        page.drawRectangle({
+                            x: 310,
+                            y: pageHeight - 372,
+                            width: 220,
+                            height: 20,
+                            color: PDFLib.rgb(1, 1, 1)
+                        });
+                        if (hypo !== 'BLANK') {
+                            page.drawText(hypo, { x: 326.25, y: pageHeight - 368.5, size: 9, font: helv });
                         }
                     }
 
                     // 3. Date in Sale Certificate
                     if (newDate && newDate.trim()) {
                         const cleanDate = (newDate.match(/\\d{2}\\/\\d{2}\\/\\d{4}/) || [newDate])[0];
-                        for (const it of textContent.items) {
-                            if (it.str.includes('11/11/2026') || (it.str.match(/\\d{2}\\/\\d{2}\\/\\d{4}/) && it.transform[5] > 100)) {
-                                const fx = it.transform[4];
-                                const fy = it.transform[5];
-                                page.drawRectangle({
-                                    x: fx - 2,
-                                    y: fy - 4,
-                                    width: 80,
-                                    height: 18,
-                                    color: PDFLib.rgb(1, 1, 1)
-                                });
-                                page.drawText(cleanDate, { x: fx, y: fy, size: 9, font: helv });
-                            }
-                        }
+                        // Top date
+                        page.drawRectangle({
+                            x: 508,
+                            y: pageHeight - 134,
+                            width: 72,
+                            height: 18,
+                            color: PDFLib.rgb(1, 1, 1)
+                        });
+                        page.drawText('  ' + cleanDate, { x: 512.1, y: pageHeight - 130.0, size: 9, font: helv });
+
+                        // Delivery clause date
+                        page.drawRectangle({
+                            x: 64,
+                            y: pageHeight - 201,
+                            width: 60,
+                            height: 14,
+                            color: PDFLib.rgb(1, 1, 1)
+                        });
+                        page.drawText(cleanDate, { x: 65.7, y: pageHeight - 198.5, size: 9, font: helv });
                     }
 
                     // 4. Signatory in Sale Certificate
-                    for (const it of textContent.items) {
-                        if (it.str.includes('Shanti Motors') && (pageHeight - it.transform[5]) > 400) {
-                            const fy = it.transform[5];
-                            page.drawRectangle({
-                                x: 450,
-                                y: fy - 4,
-                                width: 130,
-                                height: 18,
-                                color: PDFLib.rgb(1, 1, 1)
-                            });
-                            const text = 'For ANNAPURNA MOTORS';
-                            const tLen = helv.widthOfTextAtSize(text, 9);
-                            page.drawText(text, { x: 570 - tLen, y: fy, size: 9, font: helv });
-                        }
-                    }
+                    page.drawRectangle({
+                        x: 460,
+                        y: pageHeight - 612,
+                        width: 120,
+                        height: 20,
+                        color: PDFLib.rgb(1, 1, 1)
+                    });
+                    const scFooterText = 'For ANNAPURNA MOTORS';
+                    const scLen = helv.widthOfTextAtSize(scFooterText, 9);
+                    page.drawText(scFooterText, { x: 570.0 - scLen, y: pageHeight - 607.0, size: 9, font: helv });
 
                 } else {
                     // --- Tax Invoice Processing ---
@@ -384,58 +447,41 @@
 
                     // 2. Hypothecation in Invoice
                     if (hypo && hypo !== 'KEEP_ORIGINAL') {
-                        for (const it of textContent.items) {
-                            if (it.str.includes('Hypothecation with') || it.str.includes('HERO FINCORP')) {
-                                const fy = it.transform[5];
-                                page.drawRectangle({
-                                    x: 125,
-                                    y: fy - 4,
-                                    width: 220,
-                                    height: 18,
-                                    color: PDFLib.rgb(1, 1, 1)
-                                });
-                                if (hypo !== 'BLANK') {
-                                    page.drawText(hypo, { x: 132.30, y: fy, size: 9, font: helv });
-                                }
-                                break;
-                            }
+                        page.drawRectangle({
+                            x: 125,
+                            y: pageHeight - 352,
+                            width: 220,
+                            height: 18,
+                            color: PDFLib.rgb(1, 1, 1)
+                        });
+                        if (hypo !== 'BLANK') {
+                            page.drawText(hypo, { x: 132.30, y: pageHeight - 348.5, size: 9, font: helv });
                         }
                     }
 
                     // 3. Date in Invoice
                     if (newDate && newDate.trim()) {
-                        for (const it of textContent.items) {
-                            if (it.str.includes('Date') && it.transform[4] > 380 && (pageHeight - it.transform[5]) > 200 && (pageHeight - it.transform[5]) < 260) {
-                                const fy = it.transform[5];
-                                page.drawRectangle({
-                                    x: 475,
-                                    y: fy - 4,
-                                    width: 105,
-                                    height: 18,
-                                    color: PDFLib.rgb(1, 1, 1)
-                                });
-                                page.drawText(newDate.trim(), { x: 479.8, y: fy, size: 9, font: helv });
-                                break;
-                            }
-                        }
+                        page.drawRectangle({
+                            x: 478,
+                            y: pageHeight - 236,
+                            width: 95,
+                            height: 16,
+                            color: PDFLib.rgb(1, 1, 1)
+                        });
+                        page.drawText(newDate.trim(), { x: 480.0, y: pageHeight - 233.5, size: 9, font: helv });
                     }
 
                     // 4. Signatory in Invoice
-                    for (const it of textContent.items) {
-                        if (it.str.includes('SHANTI MOTORS') && (pageHeight - it.transform[5]) > 200) {
-                            const fy = it.transform[5];
-                            page.drawRectangle({
-                                x: 440,
-                                y: fy - 4,
-                                width: 145,
-                                height: 18,
-                                color: PDFLib.rgb(1, 1, 1)
-                            });
-                            const text = 'For ANNAPURNA MOTORS';
-                            const tLen = helv.widthOfTextAtSize(text, 9);
-                            page.drawText(text, { x: 577.05 - tLen, y: fy, size: 9, font: helv });
-                        }
-                    }
+                    page.drawRectangle({
+                        x: 440,
+                        y: pageHeight - 651,
+                        width: 145,
+                        height: 18,
+                        color: PDFLib.rgb(1, 1, 1)
+                    });
+                    const invFooterText = 'For ANNAPURNA MOTORS';
+                    const invLen = helv.widthOfTextAtSize(invFooterText, 9);
+                    page.drawText(invFooterText, { x: 577.05 - invLen, y: pageHeight - 647.5, size: 9, font: helv });
                 }
             }
 
