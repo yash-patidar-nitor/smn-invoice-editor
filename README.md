@@ -30,31 +30,28 @@ Built for **Hero MotoCorp Ltd.** documents, using high-precision vector redactio
 
 ---
 
-## 🌐 Live Web App (GitHub Pages)
+## 🚀 Recommended: Run Web App Locally (Zero Lag, Fast PyMuPDF Engine)
 
-Run the web app directly in your browser with **zero installation**:
+The fastest and most reliable way to use the Web App is via the Python server:
 
-👉 **[Launch Live Web App](https://yash-patidar-nitor.github.io/smn-invoice-editor/)** *(Active upon GitHub Pages enablement)*
-
-- **100% Client-Side Privacy**: Runs locally in your browser via WebAssembly (`pdf-lib` + `pdf.js`). Your documents never leave your computer.
-- **Drag & Drop**: Drop single or batch PDF documents.
-- **Interactive Preview**: In-browser modal preview of converted documents.
+1. Double-click **`Launch_Web_App.bat`** (or run `python server.py`).
+2. Your browser opens automatically at **`http://localhost:5000`**.
+3. **Features**:
+   - Converts both Tax Invoices & Form 21 Sale Certificates in **under 0.2 seconds** (<200ms) with zero browser lag.
+   - 100% native file picker and drag-and-drop.
+   - Hypothecation selector, custom date input, live PDF preview, and 1-click ZIP download.
 
 ---
 
-## 💻 Run Web App Locally (Python / Flask)
+## 🌐 Live Web App (GitHub Pages)
 
-Start the Python web server on your local machine:
+Run directly in your browser with **zero installation**:
 
-```bash
-# 1. Install dependencies
-pip install -r requirements.txt
+👉 **[Launch Live Web App](https://yash-patidar-nitor.github.io/smn-invoice-editor/)** *(Active upon GitHub Pages enablement)*
 
-# 2. Start the web server
-python server.py
-```
-Or double-click **`Launch_Web_App.bat`** on Windows. The app opens automatically at:  
-`http://localhost:5000`
+- **100% Client-Side Privacy**: Runs locally in your browser using lightweight `pdf-lib`. Your documents never leave your computer.
+- **Drag & Drop**: Drop single or batch PDF documents.
+- **Interactive Preview**: In-browser modal preview of converted documents.
 
 ---
 

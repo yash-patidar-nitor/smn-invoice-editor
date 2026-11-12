@@ -61,7 +61,7 @@ HTML_TEMPLATE = """
         .form-control { width: 100%; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--text-dark); background: #fff; transition: border-color 0.2s; outline: none; }
         .form-control:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,0.1); }
 
-        .drop-zone { border: 2px dashed #cbd5e1; border-radius: var(--radius); padding: 32px 20px; text-align: center; cursor: pointer; transition: all 0.2s; background: #f8fafc; }
+        .drop-zone { display: block; border: 2px dashed #cbd5e1; border-radius: var(--radius); padding: 32px 20px; text-align: center; cursor: pointer; transition: all 0.2s; background: #f8fafc; }
         .drop-zone:hover, .drop-zone.dragover { border-color: var(--primary); background: #eff6ff; }
         .drop-zone-icon { font-size: 38px; margin-bottom: 8px; }
         .drop-zone-title { font-size: 15px; font-weight: 600; color: var(--text-dark); }
@@ -143,15 +143,15 @@ HTML_TEMPLATE = """
         <div class="card">
             <div class="card-title">2. Upload PDFs (Invoices & Sale Certificates)</div>
             
-            <!-- Hidden file input placed outside drop-zone to prevent bubbling issues -->
-            <input type="file" id="file-input" multiple accept=".pdf,.PDF,application/pdf" style="display:none">
+            <!-- Hidden file input using off-screen positioning so it is always accessible to native label clicks -->
+            <input type="file" id="file-input" multiple accept=".pdf,.PDF,application/pdf" style="position:fixed; top:-2000px; left:-2000px; opacity:0; pointer-events:none;">
 
-            <div class="drop-zone" id="drop-zone">
+            <label for="file-input" class="drop-zone" id="drop-zone">
                 <div class="drop-zone-icon">📄</div>
-                <div class="drop-zone-title">Click to upload or drag & drop PDF files</div>
+                <div class="drop-zone-title">Click anywhere to upload or drag & drop PDF files</div>
                 <div class="drop-zone-desc">You can upload Invoices AND Sale Certificates together in the same batch!</div>
-                <button type="button" class="btn-browse" id="btn-browse">📁 Browse & Select Files</button>
-            </div>
+                <span class="btn-browse">📁 Browse & Select Files</span>
+            </label>
 
             <div class="file-list" id="file-list"></div>
 
@@ -193,24 +193,12 @@ HTML_TEMPLATE = """
 
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('file-input');
-        const btnBrowse = document.getElementById('btn-browse');
 
-        btnBrowse.addEventListener('click', (e) => {
-            e.stopPropagation();
-            fileInput.click();
-        });
-
-        dropZone.addEventListener('click', () => {
-            fileInput.click();
-        });
-
-        fileInput.addEventListener('click', function() {
-            this.value = '';
-        });
-
+        // File selection handler - native label automatically triggers fileInput
         fileInput.addEventListener('change', function() {
             if (this.files && this.files.length > 0) {
                 addFiles(Array.from(this.files));
+                this.value = ''; // Reset value safely AFTER files are read
             }
         });
 

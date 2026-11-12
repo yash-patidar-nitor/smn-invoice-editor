@@ -6,7 +6,6 @@
     <title>Hero Invoice & Sale Certificate Converter</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <style>
@@ -43,7 +42,7 @@
         .form-control { width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--text); background: #fff; outline: none; transition: border-color 0.2s; }
         .form-control:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,0.1); }
 
-        .drop-zone { border: 2px dashed #cbd5e1; border-radius: var(--radius); padding: 32px 20px; text-align: center; cursor: pointer; background: #f8fafc; transition: all 0.2s; }
+        .drop-zone { display: block; border: 2px dashed #cbd5e1; border-radius: var(--radius); padding: 32px 20px; text-align: center; cursor: pointer; background: #f8fafc; transition: all 0.2s; }
         .drop-zone:hover, .drop-zone.dragover { border-color: var(--primary); background: #eff6ff; }
         .drop-zone-icon { font-size: 38px; margin-bottom: 8px; }
         .drop-zone-title { font-size: 15px; font-weight: 600; color: var(--text); }
@@ -125,14 +124,15 @@
         <div class="card">
             <div class="card-title">2. Upload PDFs (Invoices & Sale Certificates)</div>
             
-            <input type="file" id="file-input" multiple accept=".pdf,.PDF,application/pdf" style="display:none">
+            <!-- Hidden file input using off-screen positioning so it is always accessible to native label clicks -->
+            <input type="file" id="file-input" multiple accept=".pdf,.PDF,application/pdf" style="position:fixed; top:-2000px; left:-2000px; opacity:0; pointer-events:none;">
 
-            <div class="drop-zone" id="drop-zone">
+            <label for="file-input" class="drop-zone" id="drop-zone">
                 <div class="drop-zone-icon">📄</div>
-                <div class="drop-zone-title">Click to upload or drag & drop PDF files</div>
+                <div class="drop-zone-title">Click anywhere to upload or drag & drop PDF files</div>
                 <div class="drop-zone-desc">Convert Sale Certificates and Tax Invoices together in the same batch!</div>
-                <button type="button" class="btn-browse" id="btn-browse">📁 Browse & Select Files</button>
-            </div>
+                <span class="btn-browse">📁 Browse & Select Files</span>
+            </label>
 
             <div class="file-list" id="file-list"></div>
 
@@ -170,34 +170,17 @@
     </div>
 
     <script>
-        // Disable external worker to avoid cross-origin / file:// security errors
-        if (typeof pdfjsLib !== 'undefined') {
-            pdfjsLib.GlobalWorkerOptions.workerSrc = '';
-        }
-
         let selectedFiles = [];
         let convertedResults = [];
 
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('file-input');
-        const btnBrowse = document.getElementById('btn-browse');
 
-        btnBrowse.addEventListener('click', (e) => {
-            e.stopPropagation();
-            fileInput.click();
-        });
-
-        dropZone.addEventListener('click', () => {
-            fileInput.click();
-        });
-
-        fileInput.addEventListener('click', function() {
-            this.value = '';
-        });
-
+        // File selection handler - native label automatically triggers fileInput
         fileInput.addEventListener('change', function() {
             if (this.files && this.files.length > 0) {
                 addFiles(Array.from(this.files));
+                this.value = ''; // Reset value safely AFTER files are read
             }
         });
 
@@ -336,22 +319,15 @@
             const helvBold = await pdfDoc.embedFont(PDFLib.StandardFonts.HelveticaBold);
             const pages = pdfDoc.getPages();
 
-            // Check if document is a Sale Certificate by filename or content
+            // Instant fast detection of Sale Certificate vs Tax Invoice
             let isSaleCert = fileName.toLowerCase().includes('sale') || fileName.toLowerCase().includes('cert');
-
-            // Try to extract text with pdfjs if available
             try {
-                if (typeof pdfjsLib !== 'undefined') {
-                    const pdfJsDoc = await pdfjsLib.getDocument({ data: arrayBuffer.slice(0) }).promise;
-                    const firstPage = await pdfJsDoc.getPage(1);
-                    const firstText = await firstPage.getTextContent();
-                    const textJoined = firstText.items.map(it => it.str).join(' ');
-                    if (textJoined.includes('SALE CERTIFICATE') || textJoined.includes('Form No .21')) {
-                        isSaleCert = true;
-                    }
+                const headerSlice = new TextDecoder('latin1').decode(new Uint8Array(arrayBuffer.slice(0, 16384)));
+                if (headerSlice.includes('SALE CERTIFICATE') || headerSlice.includes('Form No') || headerSlice.includes('Form 21')) {
+                    isSaleCert = true;
                 }
             } catch (e) {
-                console.warn('PDF.js text inspection fallback:', e);
+                // fallback to filename detection
             }
 
             for (let pIndex = 0; pIndex < pages.length; pIndex++) {
@@ -392,7 +368,8 @@
 
                     // 3. Date in Sale Certificate
                     if (newDate && newDate.trim()) {
-                        const cleanDate = (newDate.match(/\\d{2}\\/\\d{2}\\/\\d{4}/) || [newDate])[0];
+                        const m = newDate.match(/\d{2}\/\d{2}\/\d{4}/);
+                        const cleanDate = m ? m[0] : newDate.trim();
                         // Top date
                         page.drawRectangle({
                             x: 508,
