@@ -77,15 +77,35 @@ python test_converter.py
 
 ---
 
+## 🤖 GitHub Actions CI/CD Workflows
+
+The repository includes pre-configured GitHub Actions workflows in `.github/workflows/`:
+
+1. **CI Test Suite (`ci.yml`)**:
+   - Automatically executes on every push and pull request.
+   - Tests across Linux and Windows runners on Python 3.10, 3.11, and 3.12.
+   - Verifies the full conversion engine and ensures test pass rates.
+
+2. **Automated Windows Build (`build-windows-exe.yml`)**:
+   - Builds a standalone portable `HeroInvoiceConverter.exe` for Windows using PyInstaller.
+   - Automatically uploads the built `.exe` artifact to the GitHub Actions run page.
+   - Automatically publishes a GitHub Release when tags like `v1.0.0` are pushed.
+
+---
+
 ## 📁 Repository Structure
 
 ```
 smn-invoice-editor/
-├── app.py                         # Clean Desktop GUI application
-├── converter.py                   # Core PDF redaction and conversion engine
-├── test_converter.py              # Automated verification test suite
-├── Launch_Invoice_Converter.bat   # Windows one-click desktop launcher
-├── requirements.txt               # Dependencies (PyMuPDF)
-├── README.md                      # Documentation
-└── .gitignore                     # Git ignore rules
+├── .github/
+│   └── workflows/
+│       ├── ci.yml                     # Automated test workflow (matrix across OS & Python)
+│       └── build-windows-exe.yml      # PyInstaller standalone Windows .exe build
+├── app.py                             # Clean Desktop GUI application
+├── converter.py                       # Core PDF redaction and conversion engine
+├── test_converter.py                  # Automated verification test suite
+├── Launch_Invoice_Converter.bat       # Windows one-click desktop launcher
+├── requirements.txt                   # Dependencies (PyMuPDF)
+├── README.md                          # Documentation
+└── .gitignore                         # Git ignore rules
 ```
