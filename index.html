@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hero Invoice Converter - Shanti to Annapurna</title>
+    <title>Hero Invoice & Sale Certificate Converter</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -24,19 +24,24 @@
         }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
         body { background: var(--bg); color: var(--text); padding: 32px 16px; min-height: 100vh; }
-        .container { max-width: 820px; margin: 0 auto; }
+        .container { max-width: 840px; margin: 0 auto; }
         
         .header { text-align: center; margin-bottom: 24px; }
-        .badge { display: inline-block; padding: 4px 12px; background: #dbeafe; color: var(--primary); font-size: 12px; font-weight: 600; border-radius: 9999px; margin-bottom: 10px; }
-        .title { font-size: 28px; font-weight: 700; color: var(--text); }
+        .badge { display: inline-block; padding: 4px 14px; background: #dbeafe; color: var(--primary); font-size: 12px; font-weight: 600; border-radius: 9999px; margin-bottom: 10px; }
+        .title { font-size: 28px; font-weight: 700; color: var(--text); letter-spacing: -0.5px; }
         .subtitle { color: var(--muted); font-size: 14px; margin-top: 4px; }
 
         .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
-        .card-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; color: var(--text); }
+        .card-title { font-size: 15px; font-weight: 600; margin-bottom: 14px; color: var(--text); display: flex; align-items: center; gap: 8px; }
 
-        .mode-selector { display: flex; gap: 12px; }
-        .mode-option { flex: 1; border: 1px solid var(--border); border-radius: 8px; padding: 12px; cursor: pointer; text-align: center; font-size: 13px; font-weight: 500; transition: all 0.2s; }
-        .mode-option.active { border-color: var(--primary); background: #eff6ff; color: var(--primary); font-weight: 600; }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 6px; }
+        @media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } }
+
+        .form-group { display: flex; flex-direction: column; gap: 6px; }
+        .form-label { font-size: 13px; font-weight: 600; color: var(--text); }
+        .form-hint { font-size: 11px; color: var(--muted); }
+        .form-control { width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--text); background: #fff; outline: none; transition: border-color 0.2s; }
+        .form-control:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,0.1); }
 
         .drop-zone { border: 2px dashed #cbd5e1; border-radius: var(--radius); padding: 36px 20px; text-align: center; cursor: pointer; background: #f8fafc; transition: all 0.2s; }
         .drop-zone:hover, .drop-zone.dragover { border-color: var(--primary); background: #eff6ff; }
@@ -50,7 +55,7 @@
         .file-size { color: var(--muted); font-size: 12px; }
         .file-remove { color: #ef4444; cursor: pointer; font-weight: 600; }
 
-        .btn-convert { width: 100%; background: var(--primary); color: #fff; border: none; padding: 14px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 12px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .btn-convert { width: 100%; background: var(--primary); color: #fff; border: none; padding: 14px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; }
         .btn-convert:hover { background: var(--primary-hover); }
         .btn-convert:disabled { background: #93c5fd; cursor: not-allowed; }
 
@@ -65,9 +70,12 @@
         .btn-download-all { background: var(--success); color: #fff; border: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
         .btn-download-all:hover { background: #15803d; }
 
-        .result-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px; font-size: 13px; background: #fff; }
+        .result-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; font-size: 13px; background: #fff; }
+        .result-type-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; margin-right: 6px; }
+        .tag-inv { background: #e0e7ff; color: #4338ca; }
+        .tag-sc { background: #fef3c7; color: #b45309; }
         .result-actions { display: flex; gap: 8px; }
-        .btn-link { font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 4px; border: none; cursor: pointer; text-decoration: none; }
+        .btn-link { font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 4px; border: none; cursor: pointer; text-decoration: none; }
         .btn-preview { background: #eff6ff; color: var(--primary); }
         .btn-download { background: #f1f5f9; color: var(--text); }
 
@@ -82,36 +90,46 @@
 <body>
     <div class="container">
         <div class="header">
-            <span class="badge">Client-Side Fast Conversion</span>
-            <h1 class="title">Hero Invoice Converter Web App</h1>
-            <p class="subtitle">Convert Shanti Motors invoices into Annapurna Motors format directly in your browser</p>
+            <span class="badge">Shanti Motors ➔ Annapurna Motors</span>
+            <h1 class="title">Hero Invoice & Sale Certificate Converter</h1>
+            <p class="subtitle">Converts Tax Invoices and Sale Certificates with Bank Hypothecation & Date control</p>
         </div>
 
         <div class="card">
-            <div class="card-title">1. Conversion Mode</div>
-            <div class="mode-selector">
-                <div class="mode-option active" id="mode-shanti-ann" onclick="setMode('shanti_to_annapurna')">
-                    Shanti Motors ➔ Annapurna Motors
+            <div class="card-title">1. Document Options (Optional)</div>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label class="form-label">Hypothecation With</label>
+                    <select class="form-control" id="hypo-select">
+                        <option value="KEEP_ORIGINAL">Keep Original (No Change)</option>
+                        <option value="HERO FINCORP LTD">HERO FINCORP LTD</option>
+                        <option value="TATA CAPITAL LTD">TATA CAPITAL LTD</option>
+                        <option value="AASTHA SAKH SAHKARITA">AASTHA SAKH SAHKARITA</option>
+                        <option value="BLANK">Leave Blank (Cash / None)</option>
+                    </select>
+                    <span class="form-hint">Applies to both Invoices and Sale Certificates</span>
                 </div>
-                <div class="mode-option" id="mode-ann-shanti" onclick="setMode('annapurna_to_shanti')">
-                    Annapurna Motors ➔ Shanti Motors (Reverse)
+                <div class="form-group">
+                    <label class="form-label">Change Date</label>
+                    <input type="text" class="form-control" id="date-input" placeholder="e.g. 15/11/2026 (Leave blank for original)">
+                    <span class="form-hint">Format: DD/MM/YYYY</span>
                 </div>
             </div>
         </div>
 
         <div class="card">
-            <div class="card-title">2. Upload Invoices</div>
+            <div class="card-title">2. Upload PDFs</div>
             <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
                 <div class="drop-zone-icon">📄</div>
-                <div class="drop-zone-title">Click to upload or drag & drop PDF invoices</div>
-                <div class="drop-zone-desc">Privacy guaranteed: Files are processed directly in your browser without leaving your computer</div>
+                <div class="drop-zone-title">Click to upload or drag & drop PDF files</div>
+                <div class="drop-zone-desc">Supports both Tax Invoices and Form 21 Sale Certificates</div>
                 <input type="file" id="file-input" multiple accept=".pdf" style="display:none" onchange="handleFileSelect(event)">
             </div>
 
             <div class="file-list" id="file-list"></div>
 
             <button class="btn-convert" id="btn-convert" onclick="startConversion()" disabled>
-                ⚡ Convert Invoices Now
+                ⚡ Convert to Annapurna Motors
             </button>
 
             <div class="progress-box" id="progress-box">
@@ -123,7 +141,7 @@
         </div>
 
         <div class="card results-box" id="results-box">
-            <div class="card-title">3. Converted Invoices</div>
+            <div class="card-title">3. Converted Documents</div>
             <div class="success-banner">
                 <div class="success-text" id="success-summary">All files converted successfully!</div>
                 <button class="btn-download-all" id="btn-download-all" onclick="downloadAllAsZip()">📦 Download All as ZIP</button>
@@ -136,7 +154,7 @@
     <div class="preview-modal" id="preview-modal">
         <div class="preview-content">
             <div class="preview-header">
-                <div class="preview-title" id="preview-filename">Converted Invoice Preview</div>
+                <div class="preview-title" id="preview-filename">Converted Document Preview</div>
                 <button class="preview-close" onclick="closePreview()">&times;</button>
             </div>
             <iframe class="preview-iframe" id="preview-iframe"></iframe>
@@ -148,13 +166,6 @@
 
         let selectedFiles = [];
         let convertedResults = [];
-        let currentMode = 'shanti_to_annapurna';
-
-        function setMode(mode) {
-            currentMode = mode;
-            document.getElementById('mode-shanti-ann').classList.toggle('active', mode === 'shanti_to_annapurna');
-            document.getElementById('mode-ann-shanti').classList.toggle('active', mode === 'annapurna_to_shanti');
-        }
 
         const dropZone = document.getElementById('drop-zone');
         ['dragenter', 'dragover'].forEach(name => {
@@ -217,6 +228,9 @@
             const progressStatus = document.getElementById('progress-status');
             const resultsBox = document.getElementById('results-box');
 
+            const hypo = document.getElementById('hypo-select').value;
+            const dateVal = document.getElementById('date-input').value.trim();
+
             btn.disabled = true;
             progressBox.style.display = 'block';
             resultsBox.style.display = 'none';
@@ -231,15 +245,18 @@
 
                 try {
                     const arrayBuffer = await file.arrayBuffer();
-                    const convertedBlob = await convertPdfInBrowser(arrayBuffer, currentMode);
-                    const prefix = currentMode === 'shanti_to_annapurna' ? 'annapurna_' : 'shanti_';
-                    const convertedName = `${prefix}${file.name}`;
-                    const url = URL.createObjectURL(convertedBlob);
+                    const { blob, docType } = await convertPdfInBrowser(arrayBuffer, hypo, dateVal);
+                    const dotIdx = file.name.lastIndexOf('.');
+                    const stem = dotIdx !== -1 ? file.name.substring(0, dotIdx) : file.name;
+                    const ext = dotIdx !== -1 ? file.name.substring(dotIdx) : '.pdf';
+                    const convertedName = `${stem}_smn${ext}`;
+                    const url = URL.createObjectURL(blob);
 
                     convertedResults.push({
                         originalName: file.name,
                         convertedName: convertedName,
-                        blob: convertedBlob,
+                        docType: docType,
+                        blob: blob,
                         url: url
                     });
                 } catch (err) {
@@ -253,14 +270,18 @@
             renderResults();
         }
 
-        async function convertPdfInBrowser(arrayBuffer, mode) {
+        async function convertPdfInBrowser(arrayBuffer, hypo, newDate) {
             const pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer);
             const helv = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
             const helvBold = await pdfDoc.embedFont(PDFLib.StandardFonts.HelveticaBold);
             const pages = pdfDoc.getPages();
 
-            // Search for signatory / footer coordinates using PDF.js
             const pdfJsDoc = await pdfjsLib.getDocument({ data: arrayBuffer.slice(0) }).promise;
+            const firstPage = await pdfJsDoc.getPage(1);
+            const firstTextContent = await firstPage.getTextContent();
+            const firstPageStrings = firstTextContent.items.map(it => it.str).join(' ');
+
+            const isSaleCert = firstPageStrings.includes('SALE CERTIFICATE') || firstPageStrings.includes('Form No .21');
 
             for (let pIndex = 0; pIndex < pages.length; pIndex++) {
                 const page = pages[pIndex];
@@ -268,78 +289,161 @@
                 const jsPage = await pdfJsDoc.getPage(pIndex + 1);
                 const textContent = await jsPage.getTextContent();
 
-                let hasHeader = false;
-                let footerItem = null;
+                if (isSaleCert) {
+                    // --- Sale Certificate Processing ---
+                    // 1. Redact Header on Page 0
+                    if (pIndex === 0) {
+                        page.drawRectangle({
+                            x: 54,
+                            y: pageHeight - 75,
+                            width: 386,
+                            height: 53,
+                            color: PDFLib.rgb(1, 1, 1)
+                        });
 
-                for (const item of textContent.items) {
-                    const str = item.str;
-                    // Check header zone (y near top)
-                    if (mode === 'shanti_to_annapurna') {
-                        if (str.includes('SHANTI MOTORS') || str.includes('23AQMPP0120E1ZE')) {
-                            const yFromTop = pageHeight - item.transform[5];
-                            if (yFromTop < 200) hasHeader = true;
-                            else footerItem = item;
-                        }
-                    } else {
-                        if (str.includes('ANNAPURNA MOTORS') || str.includes('23AFTPG6974R1ZE')) {
-                            const yFromTop = pageHeight - item.transform[5];
-                            if (yFromTop < 200) hasHeader = true;
-                            else footerItem = item;
+                        page.drawText('ANNAPURNA MOTORS', { x: 56.7, y: pageHeight - 35.0, size: 9, font: helvBold });
+                        page.drawText('Khasra 193/1  Ward 15 Alirajpur Road', { x: 56.7, y: pageHeight - 46.0, size: 9, font: helv });
+                        page.drawText('KUKSHI DHAR MADHYA PRADESH 454331 Contact# 9755820013', { x: 56.7, y: pageHeight - 57.0, size: 9, font: helv });
+                        page.drawText('Authorized Dealer: Hero MotoCorp Ltd.', { x: 56.7, y: pageHeight - 68.0, size: 9, font: helvBold });
+                    }
+
+                    // 2. Hypothecation in Sale Certificate
+                    if (hypo && hypo !== 'KEEP_ORIGINAL') {
+                        for (const it of textContent.items) {
+                            if (it.str.includes('hypothecation with') || it.str.includes('HERO FINCORP')) {
+                                const fy = it.transform[5];
+                                page.drawRectangle({
+                                    x: 310,
+                                    y: fy - 4,
+                                    width: 220,
+                                    height: 18,
+                                    color: PDFLib.rgb(1, 1, 1)
+                                });
+                                if (hypo !== 'BLANK') {
+                                    page.drawText(hypo, { x: 326.25, y: fy, size: 9, font: helv });
+                                }
+                                break;
+                            }
                         }
                     }
-                }
 
-                // 1. Redact & Replace Header
-                if (hasHeader || pIndex === 0) {
-                    page.drawRectangle({
-                        x: 26,
-                        y: pageHeight - 170,
-                        width: 414,
-                        height: 64,
-                        color: PDFLib.rgb(1, 1, 1)
-                    });
+                    // 3. Date in Sale Certificate
+                    if (newDate && newDate.trim()) {
+                        const cleanDate = (newDate.match(/\\d{2}\\/\\d{2}\\/\\d{4}/) || [newDate])[0];
+                        for (const it of textContent.items) {
+                            if (it.str.includes('11/11/2026') || (it.str.match(/\\d{2}\\/\\d{2}\\/\\d{4}/) && it.transform[5] > 100)) {
+                                const fx = it.transform[4];
+                                const fy = it.transform[5];
+                                page.drawRectangle({
+                                    x: fx - 2,
+                                    y: fy - 4,
+                                    width: 80,
+                                    height: 18,
+                                    color: PDFLib.rgb(1, 1, 1)
+                                });
+                                page.drawText(cleanDate, { x: fx, y: fy, size: 9, font: helv });
+                            }
+                        }
+                    }
 
-                    if (mode === 'shanti_to_annapurna') {
+                    // 4. Signatory in Sale Certificate
+                    for (const it of textContent.items) {
+                        if (it.str.includes('Shanti Motors') && (pageHeight - it.transform[5]) > 400) {
+                            const fy = it.transform[5];
+                            page.drawRectangle({
+                                x: 450,
+                                y: fy - 4,
+                                width: 130,
+                                height: 18,
+                                color: PDFLib.rgb(1, 1, 1)
+                            });
+                            const text = 'For ANNAPURNA MOTORS';
+                            const tLen = helv.widthOfTextAtSize(text, 9);
+                            page.drawText(text, { x: 570 - tLen, y: fy, size: 9, font: helv });
+                        }
+                    }
+
+                } else {
+                    // --- Tax Invoice Processing ---
+                    // 1. Redact Header on Page 0
+                    if (pIndex === 0) {
+                        page.drawRectangle({
+                            x: 26,
+                            y: pageHeight - 170,
+                            width: 414,
+                            height: 64,
+                            color: PDFLib.rgb(1, 1, 1)
+                        });
+
                         page.drawText('ANNAPURNA MOTORS', { x: 28.35, y: pageHeight - 120.5, size: 9, font: helvBold });
                         page.drawText('Khasra 193/1  Ward 15 Alirajpur Road', { x: 28.35, y: pageHeight - 131.0, size: 9, font: helv });
                         page.drawText('KUKSHI DHAR MADHYA PRADESH 454331 State Code: 23 Contact #     9755820013', { x: 28.35, y: pageHeight - 142.0, size: 9, font: helv });
                         page.drawText('Authorized Dealer: Hero MotoCorp Ltd.', { x: 28.35, y: pageHeight - 153.0, size: 9, font: helvBold });
                         page.drawText('GSTIN #: 23AFTPG6974R1ZE PAN# AFTPG6974R', { x: 28.35, y: pageHeight - 164.0, size: 9, font: helv });
-                    } else {
-                        page.drawText('M/S.SHANTI MOTORS', { x: 28.35, y: pageHeight - 120.5, size: 9, font: helvBold });
-                        page.drawText('NEAR NEW BUS STAND, PUNARVAS NISARPUR', { x: 28.35, y: pageHeight - 131.0, size: 9, font: helv });
-                        page.drawText('KUKSHI DHAR MADHYA PRADESH 454335 State Code: 23 Contact #     9131076286', { x: 28.35, y: pageHeight - 142.0, size: 9, font: helv });
-                        page.drawText('Authorized Representative of Dealer: Hero MotoCorp Ltd.', { x: 28.35, y: pageHeight - 153.0, size: 9, font: helvBold });
-                        page.drawText('GSTIN #: 23AQMPP0120E1ZE', { x: 28.35, y: pageHeight - 164.0, size: 9, font: helv });
                     }
-                }
 
-                // 2. Redact & Replace Footer Signatory
-                if (footerItem) {
-                    const fy = footerItem.transform[5];
-                    page.drawRectangle({
-                        x: 440,
-                        y: fy - 4,
-                        width: 145,
-                        height: 18,
-                        color: PDFLib.rgb(1, 1, 1)
-                    });
+                    // 2. Hypothecation in Invoice
+                    if (hypo && hypo !== 'KEEP_ORIGINAL') {
+                        for (const it of textContent.items) {
+                            if (it.str.includes('Hypothecation with') || it.str.includes('HERO FINCORP')) {
+                                const fy = it.transform[5];
+                                page.drawRectangle({
+                                    x: 125,
+                                    y: fy - 4,
+                                    width: 220,
+                                    height: 18,
+                                    color: PDFLib.rgb(1, 1, 1)
+                                });
+                                if (hypo !== 'BLANK') {
+                                    page.drawText(hypo, { x: 132.30, y: fy, size: 9, font: helv });
+                                }
+                                break;
+                            }
+                        }
+                    }
 
-                    const text = mode === 'shanti_to_annapurna' ? 'For ANNAPURNA MOTORS' : 'For M/S.SHANTI MOTORS';
-                    const textLen = helv.widthOfTextAtSize(text, 9);
-                    const targetX = 577.05 - textLen;
+                    // 3. Date in Invoice
+                    if (newDate && newDate.trim()) {
+                        for (const it of textContent.items) {
+                            if (it.str.includes('Date') && it.transform[4] > 380 && (pageHeight - it.transform[5]) > 200 && (pageHeight - it.transform[5]) < 260) {
+                                const fy = it.transform[5];
+                                page.drawRectangle({
+                                    x: 475,
+                                    y: fy - 4,
+                                    width: 105,
+                                    height: 18,
+                                    color: PDFLib.rgb(1, 1, 1)
+                                });
+                                page.drawText(newDate.trim(), { x: 479.8, y: fy, size: 9, font: helv });
+                                break;
+                            }
+                        }
+                    }
 
-                    page.drawText(text, {
-                        x: targetX,
-                        y: fy,
-                        size: 9,
-                        font: helv
-                    });
+                    // 4. Signatory in Invoice
+                    for (const it of textContent.items) {
+                        if (it.str.includes('SHANTI MOTORS') && (pageHeight - it.transform[5]) > 200) {
+                            const fy = it.transform[5];
+                            page.drawRectangle({
+                                x: 440,
+                                y: fy - 4,
+                                width: 145,
+                                height: 18,
+                                color: PDFLib.rgb(1, 1, 1)
+                            });
+                            const text = 'For ANNAPURNA MOTORS';
+                            const tLen = helv.widthOfTextAtSize(text, 9);
+                            page.drawText(text, { x: 577.05 - tLen, y: fy, size: 9, font: helv });
+                        }
+                    }
                 }
             }
 
             const modifiedPdfBytes = await pdfDoc.save();
-            return new Blob([modifiedPdfBytes], { type: 'application/pdf' });
+            return {
+                blob: new Blob([modifiedPdfBytes], { type: 'application/pdf' }),
+                docType: isSaleCert ? 'sale_certificate' : 'invoice'
+            };
         }
 
         function renderResults() {
@@ -349,20 +453,26 @@
             const list = document.getElementById('results-list');
 
             resultsBox.style.display = 'block';
-            summary.innerText = `Converted ${convertedResults.length} invoice(s) successfully!`;
+            summary.innerText = `Converted ${convertedResults.length} document(s) successfully!`;
             btnZip.style.display = convertedResults.length > 1 ? 'inline-block' : 'none';
 
-            list.innerHTML = convertedResults.map((r, i) => `
+            list.innerHTML = convertedResults.map((r, i) => {
+                const typeTag = r.docType === 'sale_certificate' 
+                    ? '<span class="result-type-tag tag-sc">Sale Certificate</span>'
+                    : '<span class="result-type-tag tag-inv">Tax Invoice</span>';
+
+                return `
                 <div class="result-item">
                     <div>
-                        <strong>${r.convertedName}</strong>
+                        <div>${typeTag}<strong>${r.convertedName}</strong></div>
                     </div>
                     <div class="result-actions">
                         <button class="btn-link btn-preview" onclick="openPreview(${i})">👁 Preview</button>
                         <a href="${r.url}" download="${r.convertedName}" class="btn-link btn-download">⬇ Download</a>
                     </div>
                 </div>
-            `).join('');
+                `;
+            }).join('');
         }
 
         function openPreview(index) {
@@ -383,7 +493,7 @@
                 zip.file(r.convertedName, r.blob);
             });
             const content = await zip.generateAsync({ type: 'blob' });
-            saveAs(content, 'converted_annapurna_invoices.zip');
+            saveAs(content, 'converted_annapurna_documents.zip');
         }
     </script>
 </body>

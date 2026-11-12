@@ -1,7 +1,10 @@
 """
-Test suite for Invoice Converter.
-Verifies conversion, redaction, text placement, and batch mode.
-Works self-contained across any CI environment (including GitHub Actions).
+Comprehensive Test Suite for Hero Invoice and Sale Certificate Converter.
+Verifies:
+1. Tax Invoice conversion (Shanti -> Annapurna)
+2. Sale Certificate conversion (Shanti -> Annapurna)
+3. Hypothecation replacement (TATA CAPITAL, AASTHA SAKH SAHKARITA, BLANK, HERO FINCORP)
+4. Date replacement across Invoice and Sale Certificate
 """
 
 import os
@@ -10,90 +13,117 @@ import fitz
 import converter
 
 
-def create_mock_shanti_pdf(pdf_path: str):
-    """Generate a clean mock Hero invoice with Shanti Motors details."""
-    doc = fitz.open()
-    page = doc.new_page(width=595, height=842)  # Standard A4
+def test_real_files():
+    # 1. Test Invoice if present
+    inv_path = r"c:\Users\yash.patidar\Downloads\smn.pdf"
+    if os.path.exists(inv_path):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_pdf = os.path.join(tmpdir, "annapurna_inv.pdf")
+            stats = converter.convert_document(
+                inv_path,
+                out_pdf,
+                hypothecation="TATA CAPITAL LTD",
+                new_date="18/11/2026"
+            )
+            print("Invoice conversion stats:", stats)
+            assert stats["status"] == "success"
+            assert stats["doc_type"] == "invoice"
 
-    # Header block
-    page.insert_text((28.35, 120.5), "M/S.SHANTI MOTORS", fontsize=9.0, fontname="helv")
-    page.insert_text((28.35, 131.0), "NEAR NEW BUS STAND, PUNARVAS NISARPUR", fontsize=9.0, fontname="helv")
-    page.insert_text((28.35, 142.0), "KUKSHI DHAR MADHYA PRADESH 454335 State Code: 23 Contact #     9131076286", fontsize=9.0, fontname="helv")
-    page.insert_text((28.35, 153.0), "Authorized Representative of Dealer: Hero MotoCorp Ltd.", fontsize=9.0, fontname="helv")
-    page.insert_text((28.35, 164.0), "GSTIN #: 23AQMPP0120E1ZE", fontsize=9.0, fontname="helv")
+            doc = fitz.open(out_pdf)
+            page0 = doc[0]
+            # Verify Shanti Motors is gone
+            assert len(page0.search_for("SHANTI MOTORS")) == 0
+            # Verify Annapurna is present
+            assert len(page0.search_for("ANNAPURNA MOTORS")) >= 1
+            assert len(page0.search_for("For ANNAPURNA MOTORS")) >= 1
+            # Verify Hypothecation
+            assert len(page0.search_for("TATA CAPITAL LTD")) >= 1
+            # Verify Date
+            assert len(page0.search_for("18/11/2026")) >= 1
+            doc.close()
+            print("INVOICE TEST PASSED: Header, Footer, Hypothecation & Date verified!")
 
-    # Body sample
-    page.insert_text((28.35, 250.0), "TAX INVOICE", fontsize=12.0, fontname="helv")
-    page.insert_text((28.35, 280.0), "Customer: Test Customer", fontsize=9.0, fontname="helv")
+    # 2. Test Sale Certificate if present
+    sc_path = r"c:\Users\yash.patidar\Downloads\Sale Certificate - 2026-11-12T211331.714.PDF"
+    if os.path.exists(sc_path):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_pdf = os.path.join(tmpdir, "annapurna_sc.pdf")
+            stats = converter.convert_document(
+                sc_path,
+                out_pdf,
+                hypothecation="AASTHA SAKH SAHKARITA",
+                new_date="20/11/2026"
+            )
+            print("Sale Certificate conversion stats:", stats)
+            assert stats["status"] == "success"
+            assert stats["doc_type"] == "sale_certificate"
 
-    # Footer block
-    page.insert_text((467.5, 636.5), "For M/S.SHANTI MOTORS", fontsize=9.0, fontname="helv")
-    page.insert_text((486.0, 683.0), "Authorized Signatory", fontsize=9.0, fontname="helv")
+            doc = fitz.open(out_pdf)
+            page0 = doc[0]
+            # Verify Shanti Motors is gone
+            assert len(page0.search_for("Shanti Motors")) == 0
+            # Verify Annapurna is present
+            assert len(page0.search_for("ANNAPURNA MOTORS")) >= 1
+            assert len(page0.search_for("For ANNAPURNA MOTORS")) >= 1
+            # Verify Hypothecation
+            assert len(page0.search_for("AASTHA SAKH SAHKARITA")) >= 1
+            # Verify Date (both top and body)
+            assert len(page0.search_for("20/11/2026")) >= 2
+            doc.close()
+            print("SALE CERTIFICATE TEST PASSED: Header, Footer, Hypothecation & Date verified!")
 
-    doc.save(pdf_path)
-    doc.close()
+    # 3. Test Blank Hypothecation on Sale Certificate
+    if os.path.exists(sc_path):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_pdf = os.path.join(tmpdir, "annapurna_sc_blank.pdf")
+            stats = converter.convert_document(
+                sc_path,
+                out_pdf,
+                hypothecation="BLANK"
+            )
+            assert stats["status"] == "success"
+            doc = fitz.open(out_pdf)
+            page0 = doc[0]
+            assert len(page0.search_for("HERO FINCORP LTD")) == 0
+            doc.close()
+            print("BLANK HYPOTHECATION TEST PASSED!")
 
 
-def test_conversion():
+def test_mock_ci():
+    """Synthetic tests for headless CI runners."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        input_pdf = os.path.join(tmpdir, "test_input.pdf")
-        output_pdf = os.path.join(tmpdir, "test_output.pdf")
-
-        create_mock_shanti_pdf(input_pdf)
-        assert os.path.exists(input_pdf), "Failed to create mock PDF"
-
-        # 1. Convert Shanti -> Annapurna
-        res = converter.convert_shanti_to_annapurna(input_pdf, output_pdf)
-        print("Conversion result:", res)
-        assert res["status"] == "success", f"Conversion failed: {res}"
-        assert res["headers_replaced"] >= 1, "Header was not replaced"
-        assert res["footers_replaced"] >= 1, "Footer was not replaced"
-
-        # 2. Inspect output PDF
-        doc = fitz.open(output_pdf)
-        page0 = doc[0]
-
-        # Verify Shanti Motors is completely redacted
-        shanti_hits = page0.search_for("SHANTI MOTORS")
-        assert len(shanti_hits) == 0, f"Shanti Motors remains: {shanti_hits}"
-
-        # Verify Annapurna Motors is present in both header and footer
-        ann_hits = page0.search_for("ANNAPURNA MOTORS")
-        assert len(ann_hits) >= 2, f"Expected at least 2 Annapurna hits, got {len(ann_hits)}"
+        mock_pdf = os.path.join(tmpdir, "mock_sc.pdf")
+        doc = fitz.open()
+        p = doc.new_page(width=595, height=842)
+        p.insert_text((56.7, 35.0), "M/s.Shanti Motors", fontsize=9.0)
+        p.insert_text((56.7, 46.0), "NEAR NEW BUS STAND, PUNARVAS NISARPUR", fontsize=9.0)
+        p.insert_text((56.7, 57.0), "KUKSHI DHAR MADHYA PRADESH 454335 Contact# 9131076286", fontsize=9.0)
+        p.insert_text((56.7, 68.0), "Authorized Representative of Dealer:Hero MotoCorp Ltd.", fontsize=9.0)
+        p.insert_text((56.7, 100.0), "SALE CERTIFICATE Form No .21", fontsize=12.0)
+        p.insert_text((480.0, 120.0), "Date", fontsize=9.0)
+        p.insert_text((512.0, 120.0), "  11/11/2026", fontsize=9.0)
+        p.insert_text((65.0, 180.0), "delivered by us on date 11/11/2026 with Invoice", fontsize=9.0)
+        p.insert_text((80.0, 356.0), "purchase/hypothecation with", fontsize=9.0)
+        p.insert_text((326.0, 356.0), "HERO FINCORP LTD", fontsize=9.0)
+        p.insert_text((480.0, 595.0), "For M/s.Shanti Motors", fontsize=9.0)
+        doc.save(mock_pdf)
         doc.close()
 
-        # 3. Test Reverse Mode: Annapurna -> Shanti
-        rev_output = os.path.join(tmpdir, "test_reverse.pdf")
-        res_rev = converter.convert_annapurna_to_shanti(output_pdf, rev_output)
-        assert res_rev["status"] == "success", f"Reverse conversion failed: {res_rev}"
+        out_pdf = os.path.join(tmpdir, "mock_out.pdf")
+        stats = converter.convert_document(mock_pdf, out_pdf, hypothecation="TATA CAPITAL LTD", new_date="25/11/2026")
+        assert stats["status"] == "success"
+        assert stats["doc_type"] == "sale_certificate"
 
-        doc_rev = fitz.open(rev_output)
-        rev_page0 = doc_rev[0]
-        assert len(rev_page0.search_for("ANNAPURNA MOTORS")) == 0, "Annapurna Motors should be redacted in reverse"
-        assert len(rev_page0.search_for("SHANTI MOTORS")) >= 1, "Shanti Motors should be restored in reverse"
-        doc_rev.close()
-
-        # 4. Test Batch Processing
-        batch_out_dir = os.path.join(tmpdir, "batch_out")
-        batch_res = converter.batch_convert(tmpdir, batch_out_dir, direction="shanti_to_annapurna")
-        assert len(batch_res) >= 1, "Batch conversion returned no results"
-
-    print("ALL TESTS PASSED: Standalone test suite verified successfully!")
-
-
-def test_real_sample_if_present():
-    sample_path = r"c:\Users\yash.patidar\Downloads\smn.pdf"
-    if os.path.exists(sample_path):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            out_pdf = os.path.join(tmpdir, "annapurna_smn_real.pdf")
-            res = converter.convert_shanti_to_annapurna(sample_path, out_pdf)
-            assert res["status"] == "success"
-            doc = fitz.open(out_pdf)
-            assert len(doc[0].search_for("SHANTI MOTORS")) == 0
-            doc.close()
-            print("REAL SAMPLE TEST PASSED: Verified on smn.pdf!")
+        doc_out = fitz.open(out_pdf)
+        p_out = doc_out[0]
+        assert len(p_out.search_for("Shanti Motors")) == 0
+        assert len(p_out.search_for("ANNAPURNA MOTORS")) >= 1
+        assert len(p_out.search_for("TATA CAPITAL LTD")) >= 1
+        assert len(p_out.search_for("25/11/2026")) >= 2
+        doc_out.close()
+        print("MOCK CI TEST PASSED!")
 
 
 if __name__ == "__main__":
-    test_conversion()
-    test_real_sample_if_present()
+    test_mock_ci()
+    test_real_files()

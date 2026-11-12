@@ -1,13 +1,14 @@
 """
-Hero Invoice Converter - Web Application Server
+Hero Invoice & Sale Certificate Converter - Web Application Server
 Flask-based responsive web app with drag-and-drop conversion,
-live PDF preview, batch processing, and ZIP download.
+live PDF preview, batch processing, Hypothecation dropdown, Date picker, and ZIP download.
 """
 
 import os
 import io
 import zipfile
 import tempfile
+import uuid
 from flask import Flask, request, jsonify, send_file, render_template_string
 from werkzeug.utils import secure_filename
 import converter
@@ -23,7 +24,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hero Invoice Converter - Shanti to Annapurna</title>
+    <title>Hero Invoice & Sale Certificate Converter</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -39,21 +40,25 @@ HTML_TEMPLATE = """
             --radius: 12px;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
-        body { background: var(--bg-color); color: var(--text-dark); padding: 24px 16px; min-height: 100vh; }
-        .container { max-width: 820px; margin: 0 auto; }
+        body { background: var(--bg-color); color: var(--text-dark); padding: 28px 16px; min-height: 100vh; }
+        .container { max-width: 840px; margin: 0 auto; }
         
         .header { margin-bottom: 24px; text-align: center; }
-        .badge { display: inline-block; padding: 4px 12px; background: #dbeafe; color: var(--primary); font-size: 12px; font-weight: 600; border-radius: 9999px; margin-bottom: 8px; }
+        .badge { display: inline-block; padding: 4px 14px; background: #dbeafe; color: var(--primary); font-size: 12px; font-weight: 600; border-radius: 9999px; margin-bottom: 8px; }
         .title { font-size: 28px; font-weight: 700; color: var(--text-dark); letter-spacing: -0.5px; }
         .subtitle { color: var(--text-muted); font-size: 14px; margin-top: 4px; }
         
-        .card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
-        .card-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; color: var(--text-dark); display: flex; align-items: center; gap: 8px; }
+        .card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 22px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+        .card-title { font-size: 15px; font-weight: 600; margin-bottom: 14px; color: var(--text-dark); display: flex; align-items: center; gap: 8px; }
 
-        .mode-selector { display: flex; gap: 12px; }
-        .mode-option { flex: 1; border: 1px solid var(--border-color); border-radius: 8px; padding: 12px; cursor: pointer; transition: all 0.2s; text-align: center; font-size: 13px; font-weight: 500; }
-        .mode-option:hover { border-color: var(--primary); }
-        .mode-option.active { border-color: var(--primary); background: #eff6ff; color: var(--primary); font-weight: 600; }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 6px; }
+        @media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } }
+
+        .form-group { display: flex; flex-direction: column; gap: 6px; }
+        .form-label { font-size: 13px; font-weight: 600; color: var(--text-dark); }
+        .form-hint { font-size: 11px; color: var(--text-muted); }
+        .form-control { width: 100%; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--text-dark); background: #fff; transition: border-color 0.2s; outline: none; }
+        .form-control:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,0.1); }
 
         .drop-zone { border: 2px dashed #cbd5e1; border-radius: var(--radius); padding: 36px 20px; text-align: center; cursor: pointer; transition: all 0.2s; background: #f8fafc; }
         .drop-zone:hover, .drop-zone.dragover { border-color: var(--primary); background: #eff6ff; }
@@ -67,7 +72,7 @@ HTML_TEMPLATE = """
         .file-size { color: var(--text-muted); font-size: 12px; }
         .file-remove { color: #ef4444; cursor: pointer; font-weight: 600; padding: 2px 6px; }
 
-        .btn-convert { width: 100%; background: var(--primary); color: #fff; border: none; padding: 14px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.2s; margin-top: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .btn-convert { width: 100%; background: var(--primary); color: #fff; border: none; padding: 14px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.2s; margin-top: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; }
         .btn-convert:hover { background: var(--primary-hover); }
         .btn-convert:disabled { background: #93c5fd; cursor: not-allowed; }
 
@@ -82,9 +87,12 @@ HTML_TEMPLATE = """
         .btn-download-all { background: var(--success); color: #fff; text-decoration: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
         .btn-download-all:hover { background: #15803d; }
 
-        .result-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 6px; font-size: 13px; background: #fff; }
+        .result-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 8px; font-size: 13px; background: #fff; }
+        .result-type-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; margin-right: 6px; }
+        .tag-inv { background: #e0e7ff; color: #4338ca; }
+        .tag-sc { background: #fef3c7; color: #b45309; }
         .result-actions { display: flex; gap: 8px; }
-        .btn-link { font-size: 12px; font-weight: 600; text-decoration: none; padding: 4px 10px; border-radius: 4px; }
+        .btn-link { font-size: 12px; font-weight: 600; text-decoration: none; padding: 6px 12px; border-radius: 4px; border: none; cursor: pointer; }
         .btn-preview { background: #eff6ff; color: var(--primary); }
         .btn-download { background: #f1f5f9; color: var(--text-dark); }
         
@@ -99,36 +107,46 @@ HTML_TEMPLATE = """
 <body>
     <div class="container">
         <div class="header">
-            <span class="badge">Hero MotoCorp Dealership Tool</span>
-            <h1 class="title">Invoice Converter</h1>
-            <p class="subtitle">Convert Shanti Motors invoices into official Annapurna Motors format</p>
+            <span class="badge">Shanti Motors ➔ Annapurna Motors</span>
+            <h1 class="title">Invoice & Sale Certificate Converter</h1>
+            <p class="subtitle">Converts Tax Invoices and Sale Certificates with customizable Bank Hypothecation & Date</p>
         </div>
 
         <div class="card">
-            <div class="card-title">1. Conversion Mode</div>
-            <div class="mode-selector">
-                <div class="mode-option active" id="mode-shanti-ann" onclick="setMode('shanti_to_annapurna')">
-                    Shanti Motors ➔ Annapurna Motors
+            <div class="card-title">1. Document Options (Optional)</div>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label class="form-label">Hypothecation With</label>
+                    <select class="form-control" id="hypo-select">
+                        <option value="KEEP_ORIGINAL">Keep Original (No Change)</option>
+                        <option value="HERO FINCORP LTD">HERO FINCORP LTD</option>
+                        <option value="TATA CAPITAL LTD">TATA CAPITAL LTD</option>
+                        <option value="AASTHA SAKH SAHKARITA">AASTHA SAKH SAHKARITA</option>
+                        <option value="BLANK">Leave Blank (Cash / None)</option>
+                    </select>
+                    <span class="form-hint">Applies to both Invoices and Sale Certificates</span>
                 </div>
-                <div class="mode-option" id="mode-ann-shanti" onclick="setMode('annapurna_to_shanti')">
-                    Annapurna Motors ➔ Shanti Motors (Reverse)
+                <div class="form-group">
+                    <label class="form-label">Change Date</label>
+                    <input type="text" class="form-control" id="date-input" placeholder="e.g. 15/11/2026 (Leave blank for original)">
+                    <span class="form-hint">Format: DD/MM/YYYY. Updates invoice and certificate date</span>
                 </div>
             </div>
         </div>
 
         <div class="card">
-            <div class="card-title">2. Upload Invoices</div>
+            <div class="card-title">2. Upload PDFs</div>
             <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
                 <div class="drop-zone-icon">📄</div>
-                <div class="drop-zone-title">Click to upload or drag & drop PDF invoices</div>
-                <div class="drop-zone-desc">Supports single or batch Hero MotoCorp tax invoice PDFs</div>
+                <div class="drop-zone-title">Click to upload or drag & drop PDF files</div>
+                <div class="drop-zone-desc">Supports both Tax Invoices and Form 21 Sale Certificates (Single or Batch)</div>
                 <input type="file" id="file-input" multiple accept=".pdf" style="display:none" onchange="handleFileSelect(event)">
             </div>
 
             <div class="file-list" id="file-list"></div>
 
             <button class="btn-convert" id="btn-convert" onclick="startConversion()" disabled>
-                ⚡ Convert Invoices
+                ⚡ Convert to Annapurna Motors
             </button>
 
             <div class="progress-box" id="progress-box">
@@ -140,7 +158,7 @@ HTML_TEMPLATE = """
         </div>
 
         <div class="card results-box" id="results-box">
-            <div class="card-title">3. Converted Invoices</div>
+            <div class="card-title">3. Converted Documents</div>
             <div class="success-banner">
                 <div class="success-text" id="success-summary">All files converted successfully!</div>
                 <a href="#" class="btn-download-all" id="btn-download-all">📦 Download All as ZIP</a>
@@ -153,7 +171,7 @@ HTML_TEMPLATE = """
     <div class="preview-modal" id="preview-modal">
         <div class="preview-content">
             <div class="preview-header">
-                <div class="preview-title" id="preview-filename">Converted Invoice Preview</div>
+                <div class="preview-title" id="preview-filename">Converted Document Preview</div>
                 <button class="preview-close" onclick="closePreview()">&times;</button>
             </div>
             <iframe class="preview-iframe" id="preview-iframe"></iframe>
@@ -162,13 +180,6 @@ HTML_TEMPLATE = """
 
     <script>
         let selectedFiles = [];
-        let currentMode = 'shanti_to_annapurna';
-
-        function setMode(mode) {
-            currentMode = mode;
-            document.getElementById('mode-shanti-ann').classList.toggle('active', mode === 'shanti_to_annapurna');
-            document.getElementById('mode-ann-shanti').classList.toggle('active', mode === 'annapurna_to_shanti');
-        }
 
         const dropZone = document.getElementById('drop-zone');
         ['dragenter', 'dragover'].forEach(name => {
@@ -235,14 +246,18 @@ HTML_TEMPLATE = """
             const progressStatus = document.getElementById('progress-status');
             const resultsBox = document.getElementById('results-box');
 
+            const hypo = document.getElementById('hypo-select').value;
+            const dateVal = document.getElementById('date-input').value.trim();
+
             btn.disabled = true;
             progressBox.style.display = 'block';
             resultsBox.style.display = 'none';
             progressFill.style.width = '30%';
-            progressStatus.innerText = 'Uploading and processing invoices...';
+            progressStatus.innerText = 'Uploading and processing documents...';
 
             const formData = new FormData();
-            formData.append('direction', currentMode);
+            formData.append('hypothecation', hypo);
+            formData.append('new_date', dateVal);
             selectedFiles.forEach(f => formData.append('files', f));
 
             try {
@@ -272,15 +287,20 @@ HTML_TEMPLATE = """
             const list = document.getElementById('results-list');
 
             resultsBox.style.display = 'block';
-            summary.innerText = `Converted ${data.files.length} invoice(s) successfully!`;
+            summary.innerText = `Converted ${data.files.length} document(s) successfully!`;
             btnZip.href = `/api/download-zip?token=${data.token}`;
             btnZip.style.display = data.files.length > 1 ? 'inline-flex' : 'none';
 
-            list.innerHTML = data.files.map(f => `
+            list.innerHTML = data.files.map(f => {
+                const typeTag = f.doc_type === 'sale_certificate' 
+                    ? '<span class="result-type-tag tag-sc">Sale Certificate</span>'
+                    : '<span class="result-type-tag tag-inv">Tax Invoice</span>';
+
+                return `
                 <div class="result-item">
                     <div>
-                        <strong>${f.converted_name}</strong>
-                        <div style="font-size: 11px; color: var(--text-muted);">
+                        <div>${typeTag}<strong>${f.converted_name}</strong></div>
+                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 3px;">
                             Headers replaced: ${f.headers_replaced} | Signatory replaced: ${f.footers_replaced}
                         </div>
                     </div>
@@ -289,7 +309,8 @@ HTML_TEMPLATE = """
                         <a href="/api/download/${f.id}" class="btn-link btn-download">⬇ Download</a>
                     </div>
                 </div>
-            `).join('');
+                `;
+            }).join('');
         }
 
         function openPreview(id, name) {
@@ -319,10 +340,10 @@ def api_convert():
         return jsonify({'error': 'No files uploaded'}), 400
 
     uploaded_files = request.files.getlist('files')
-    direction = request.form.get('direction', 'shanti_to_annapurna')
+    hypothecation = request.form.get('hypothecation', 'KEEP_ORIGINAL')
+    new_date = request.form.get('new_date', '').strip()
 
     converted_files = []
-    import uuid
     batch_token = str(uuid.uuid4())
     token_files = []
 
@@ -336,15 +357,17 @@ def api_convert():
         in_path = os.path.join(temp_dir, f"in_{safe_name}")
         f.save(in_path)
 
-        prefix = "annapurna_" if direction == "shanti_to_annapurna" else "shanti_"
-        converted_name = f"{prefix}{safe_name}"
-        out_path = os.path.join(temp_dir, f"out_{safe_name}")
+        stem, ext = os.path.splitext(safe_name)
+        converted_name = f"{stem}_smn{ext}"
+        out_path = os.path.join(temp_dir, f"out_{converted_name}")
 
         try:
-            if direction == "shanti_to_annapurna":
-                stats = converter.convert_shanti_to_annapurna(in_path, out_path)
-            else:
-                stats = converter.convert_annapurna_to_shanti(in_path, out_path)
+            stats = converter.convert_document(
+                in_path,
+                out_path,
+                hypothecation=hypothecation,
+                new_date=new_date
+            )
 
             file_id = str(uuid.uuid4())
             with open(out_path, 'rb') as out_f:
@@ -360,6 +383,7 @@ def api_convert():
                 'id': file_id,
                 'original_name': f.filename,
                 'converted_name': converted_name,
+                'doc_type': stats.get('doc_type', 'invoice'),
                 'headers_replaced': stats.get('headers_replaced', 0),
                 'footers_replaced': stats.get('footers_replaced', 0)
             })
@@ -420,11 +444,11 @@ def download_zip():
         zip_buffer,
         mimetype='application/zip',
         as_attachment=True,
-        download_name='converted_annapurna_invoices.zip'
+        download_name='converted_annapurna_documents.zip'
     )
 
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    print(f"Starting Hero Invoice Converter Web App at http://localhost:{port}")
+    print(f"Starting Hero Invoice & Sale Certificate Web App at http://localhost:{port}")
     app.run(host='0.0.0.0', port=port, debug=False)
