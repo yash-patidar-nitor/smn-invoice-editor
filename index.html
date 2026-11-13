@@ -759,6 +759,12 @@
                 }
             }
 
+            // User requirement: In the Invoice converter, ignore the 2nd page (Terms & Conditions)
+            // In the final output, strictly only include the first page (Page 0).
+            while (pdfDoc.getPageCount() > 1) {
+                pdfDoc.removePage(1);
+            }
+
             let modifiedPdfBytes = await pdfDoc.save();
             if (scannedLook) {
                 modifiedPdfBytes = await applyScannedLook(modifiedPdfBytes, bwMode);

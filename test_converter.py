@@ -40,9 +40,8 @@ def test_real_files():
             # Verify Invoice # and Mobile # are NOT truncated
             assert len(page0.search_for("63502BK26S368")) >= 1
             assert len(page0.search_for("9343006704")) >= 1
-            # Verify Page 2 (Terms & Conditions) was NOT touched
-            assert len(doc[1].search_for("ANNAPURNA")) == 0
-            assert len(doc[1].search_for("TATA CAPITAL")) == 0
+            # Verify Page 2 was ignored and only Page 1 is in the final output
+            assert len(doc) == 1, f"Expected exactly 1 page for converted Invoice, got {len(doc)}"
             doc.close()
             print("INVOICE TEST PASSED: Header, Footer, Hypothecation, Date, and pristine font preservation verified!")
 
@@ -157,6 +156,7 @@ def test_mock_ci():
         assert len(p_inv_out.search_for("SHANTI MOTORS")) == 0
         assert len(p_inv_out.search_for("ANNAPURNA MOTORS")) >= 1
         assert len(p_inv_out.search_for("26/11/2026")) >= 1
+        assert len(doc_inv_out) == 1, f"Expected 1 page for invoice, got {len(doc_inv_out)}"
         doc_inv_out.close()
         print("MOCK INVOICE CI TEST PASSED!")
 

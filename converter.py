@@ -324,6 +324,10 @@ def convert_invoice(doc: fitz.Document, hypothecation: str = None, new_date: str
     if affix_stamp and len(doc) > 0:
         stamp_affixed = affix_dealer_stamp_invoice(doc[0])
 
+    # 4. Strictly ignore Page 2 (Terms & Conditions) and keep only Page 1 (Page 0)
+    while len(doc) > 1:
+        doc.delete_page(1)
+
     return {
         "doc_type": "invoice",
         "headers_replaced": headers_replaced,
@@ -574,6 +578,11 @@ def convert_document(input_path: str, output_path: str, hypothecation: str = Non
                     if affix_stamp:
                         if affix_dealer_stamp_invoice(page):
                             stamps_affixed += 1
+
+    # For standalone Tax Invoices: strictly ignore Page 2 (Terms & Conditions) and only keep Page 1 (Page 0)
+    if "invoice" in types_found and "sale_certificate" not in types_found:
+        while len(doc) > 1:
+            doc.delete_page(1)
 
     # Apply scanned effect (printing & scanning imperfections, dull colors, tilt, grain)
     # or size optimization if scanned effect is disabled
