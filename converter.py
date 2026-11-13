@@ -35,6 +35,46 @@ HYPOTHECATION_OPTIONS = [
     "BLANK"
 ]
 
+STAMP_FILE_NAME = "stamp.png"
+
+
+def get_stamp_path() -> str:
+    """Find the path to the Annapurna Motors official stamp image."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(base_dir, STAMP_FILE_NAME),
+        os.path.join(base_dir, "assets", STAMP_FILE_NAME),
+        os.path.join(os.path.dirname(base_dir), "annapurna_stamp_perfect.png"),
+        os.path.join(base_dir, "annapurna_stamp_perfect.png")
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            return p
+    return None
+
+
+def affix_dealer_stamp_invoice(page: fitz.Page, stamp_path: str = None) -> bool:
+    """Affix authentic Annapurna Motors circular rubber stamp and signature onto Tax Invoice."""
+    path = stamp_path or get_stamp_path()
+    if not path or not os.path.exists(path):
+        return False
+    # Tax Invoice: centered over Authorized Signatory line
+    rect = fitz.Rect(438, 680, 524, 766)
+    page.insert_image(rect, filename=path, keep_proportion=True)
+    return True
+
+
+def affix_dealer_stamp_sale_certificate(page: fitz.Page, stamp_path: str = None) -> bool:
+    """Affix authentic Annapurna Motors circular rubber stamp and signature onto Form 21 Sale Certificate."""
+    path = stamp_path or get_stamp_path()
+    if not path or not os.path.exists(path):
+        return False
+    # Sale Certificate: positioned between For ANNAPURNA MOTORS and Authorized Signatory
+    rect = fitz.Rect(438, 614, 522, 700)
+    page.insert_image(rect, filename=path, keep_proportion=True)
+    return True
+
+
 
 def detect_document_type(doc: fitz.Document) -> str:
     """Detect whether the document is a Sale Certificate or Tax Invoice."""
@@ -168,14 +208,14 @@ def update_date_sale_certificate(page: fitz.Page, new_date_str: str) -> bool:
     return True
 
 
-def convert_invoice(doc: fitz.Document, hypothecation: str = None, new_date: str = None) -> dict:
+def convert_invoice(doc: fitz.Document, hypothecation: str = None, new_date: str = None, affix_stamp: bool = True) -> dict:
     """Convert a Shanti Motors Tax Invoice into Annapurna Motors format. Strictly touches Page 1 only."""
     cfg = ANNAPURNA_INVOICE_CONFIG
     headers_replaced = 0
     footers_replaced = 0
 
     if len(doc) == 0:
-        return {"doc_type": "invoice", "headers_replaced": 0, "footers_replaced": 0}
+        return {"doc_type": "invoice", "headers_replaced": 0, "footers_replaced": 0, "stamp_affixed": False}
 
     # Invoice content is strictly on Page 0 (Page 1 is Terms & Conditions which must stay untouched)
     page = doc[0]
@@ -221,18 +261,25 @@ def convert_invoice(doc: fitz.Document, hypothecation: str = None, new_date: str
         page.insert_text((target_x, rect.y1 - 1.5), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
         footers_replaced += 1
 
+    # 5. Affix Authentic Stamp & Signature
+    stamp_affixed = False
+    if affix_stamp:
+        stamp_affixed = affix_dealer_stamp_invoice(page)
+
     return {
         "doc_type": "invoice",
         "headers_replaced": headers_replaced,
         "footers_replaced": footers_replaced,
+        "stamp_affixed": stamp_affixed
     }
 
 
-def convert_sale_certificate(doc: fitz.Document, hypothecation: str = None, new_date: str = None) -> dict:
+def convert_sale_certificate(doc: fitz.Document, hypothecation: str = None, new_date: str = None, affix_stamp: bool = True) -> dict:
     """Convert a Shanti Motors Sale Certificate into Annapurna Motors format."""
     cfg = ANNAPURNA_SC_CONFIG
     headers_replaced = 0
     footers_replaced = 0
+    stamp_affixed = False
 
     for page in doc:
         # 1. Header Block on Sale Certificate (x: ~54 to 440, y: ~22 to 75)
@@ -274,14 +321,19 @@ def convert_sale_certificate(doc: fitz.Document, hypothecation: str = None, new_
             page.insert_text((target_x, 605.0), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
             footers_replaced += 1
 
+        # 5. Affix Authentic Stamp & Signature
+        if affix_stamp:
+            stamp_affixed = affix_dealer_stamp_sale_certificate(page) or stamp_affixed
+
     return {
         "doc_type": "sale_certificate",
         "headers_replaced": headers_replaced,
         "footers_replaced": footers_replaced,
+        "stamp_affixed": stamp_affixed
     }
 
 
-def convert_document(input_path: str, output_path: str, hypothecation: str = None, new_date: str = None) -> dict:
+def convert_document(input_path: str, output_path: str, hypothecation: str = None, new_date: str = None, affix_stamp: bool = True) -> dict:
     """
     Main conversion entry point.
     Processes each page individually, accurately handling standalone Tax Invoices,
@@ -291,6 +343,7 @@ def convert_document(input_path: str, output_path: str, hypothecation: str = Non
     total_pages = len(doc)
     headers_replaced = 0
     footers_replaced = 0
+    stamps_affixed = 0
     types_found = set()
 
     for page in doc:
@@ -332,14 +385,19 @@ def convert_document(input_path: str, output_path: str, hypothecation: str = Non
                 page.insert_text((target_x, 605.0), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
                 footers_replaced += 1
 
+            if affix_stamp:
+                if affix_dealer_stamp_sale_certificate(page):
+                    stamps_affixed += 1
+
         else:
-            types_found.add("invoice")
             # --- Tax Invoice Processing ---
             shanti_hits = page.search_for("SHANTI MOTORS")
             gstin_hits = page.search_for("23AQMPP0120E1ZE")
             header_hit = any(h.y0 < 200 for h in shanti_hits)
+            is_invoice_face = header_hit or (gstin_hits and gstin_hits[0].y0 < 200)
 
-            if header_hit or (gstin_hits and gstin_hits[0].y0 < 200):
+            if is_invoice_face:
+                types_found.add("invoice")
                 header_rect = fitz.Rect(26.0, 106.0, 440.0, 170.0)
                 page.add_redact_annot(header_rect, fill=(1, 1, 1))
                 page.apply_redactions()
@@ -351,25 +409,29 @@ def convert_document(input_path: str, output_path: str, hypothecation: str = Non
                 page.insert_text((28.35, 164.0), cfg["gstin_pan"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
                 headers_replaced += 1
 
-            if hypothecation:
-                update_hypothecation_invoice(page, hypothecation)
+                if hypothecation:
+                    update_hypothecation_invoice(page, hypothecation)
 
-            if new_date:
-                update_date_invoice(page, new_date)
+                if new_date:
+                    update_date_invoice(page, new_date)
 
-            footer_hits = [h for h in page.search_for("SHANTI MOTORS") if h.y0 > 200]
-            if not footer_hits:
-                footer_hits = [h for h in page.search_for("M/S.SHANTI MOTORS") if h.y0 > 200]
+                footer_hits = [h for h in page.search_for("SHANTI MOTORS") if h.y0 > 200]
+                if not footer_hits:
+                    footer_hits = [h for h in page.search_for("M/S.SHANTI MOTORS") if h.y0 > 200]
 
-            for rect in footer_hits:
-                expanded_rect = fitz.Rect(rect.x0 - 55, rect.y0 - 2, rect.x1 + 30, rect.y1 + 2)
-                page.add_redact_annot(expanded_rect, fill=(1, 1, 1))
-                page.apply_redactions()
-                footer_text = ANNAPURNA_INVOICE_CONFIG["footer_signatory"]
-                text_len = fitz.get_text_length(footer_text, fontname="helv", fontsize=9.0)
-                target_x = max(28.35, 577.05 - text_len)
-                page.insert_text((target_x, rect.y1 - 1.5), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                footers_replaced += 1
+                for rect in footer_hits:
+                    expanded_rect = fitz.Rect(rect.x0 - 55, rect.y0 - 2, rect.x1 + 30, rect.y1 + 2)
+                    page.add_redact_annot(expanded_rect, fill=(1, 1, 1))
+                    page.apply_redactions()
+                    footer_text = ANNAPURNA_INVOICE_CONFIG["footer_signatory"]
+                    text_len = fitz.get_text_length(footer_text, fontname="helv", fontsize=9.0)
+                    target_x = max(28.35, 577.05 - text_len)
+                    page.insert_text((target_x, rect.y1 - 1.5), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                    footers_replaced += 1
+
+                if affix_stamp:
+                    if affix_dealer_stamp_invoice(page):
+                        stamps_affixed += 1
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     doc.save(output_path, garbage=4, deflate=True)
@@ -387,6 +449,7 @@ def convert_document(input_path: str, output_path: str, hypothecation: str = Non
         "pages_processed": total_pages,
         "headers_replaced": headers_replaced,
         "footers_replaced": footers_replaced,
+        "stamps_affixed": stamps_affixed,
         "status": "success"
     }
 
@@ -395,7 +458,7 @@ def convert_document(input_path: str, output_path: str, hypothecation: str = Non
 convert_shanti_to_annapurna = convert_document
 
 
-def batch_convert(input_dir: str, output_dir: str, hypothecation: str = None, new_date: str = None, progress_callback=None) -> list:
+def batch_convert(input_dir: str, output_dir: str, hypothecation: str = None, new_date: str = None, affix_stamp: bool = True, progress_callback=None) -> list:
     """Batch convert all PDF invoices and sale certificates in a directory."""
     os.makedirs(output_dir, exist_ok=True)
     results = []
@@ -408,7 +471,7 @@ def batch_convert(input_dir: str, output_dir: str, hypothecation: str = None, ne
         out_file = os.path.join(output_dir, f"{base_stem}_smn{ext}")
 
         try:
-            res = convert_document(in_file, out_file, hypothecation=hypothecation, new_date=new_date)
+            res = convert_document(in_file, out_file, hypothecation=hypothecation, new_date=new_date, affix_stamp=affix_stamp)
             res["filename"] = filename
             res["output_path"] = out_file
             results.append(res)

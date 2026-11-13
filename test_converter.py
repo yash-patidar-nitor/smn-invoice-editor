@@ -113,9 +113,10 @@ def test_mock_ci():
         doc.close()
 
         out_sc = os.path.join(tmpdir, "mock_sc_out.pdf")
-        stats_sc = converter.convert_document(mock_sc, out_sc, hypothecation="TATA CAPITAL LTD", new_date="25/11/2026")
+        stats_sc = converter.convert_document(mock_sc, out_sc, hypothecation="TATA CAPITAL LTD", new_date="25/11/2026", affix_stamp=True)
         assert stats_sc["status"] == "success"
         assert stats_sc["doc_type"] == "sale_certificate"
+        assert stats_sc["stamps_affixed"] == 1
 
         doc_out = fitz.open(out_sc)
         p_out = doc_out[0]
@@ -143,9 +144,10 @@ def test_mock_ci():
         doc_inv.close()
 
         out_inv = os.path.join(tmpdir, "mock_inv_out.pdf")
-        stats_inv = converter.convert_document(mock_inv, out_inv, hypothecation="HERO FINCORP LTD", new_date="26/11/2026")
+        stats_inv = converter.convert_document(mock_inv, out_inv, hypothecation="HERO FINCORP LTD", new_date="26/11/2026", affix_stamp=True)
         assert stats_inv["status"] == "success"
         assert stats_inv["doc_type"] == "invoice"
+        assert stats_inv["stamps_affixed"] == 1
 
         doc_inv_out = fitz.open(out_inv)
         p_inv_out = doc_inv_out[0]

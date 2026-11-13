@@ -24,6 +24,10 @@ Built for **Hero MotoCorp Ltd.** documents, using high-precision vector redactio
   - Updates date at top-right, and in the Sale Certificate delivery clause.
 - **Clean File Naming**:
   - Appends the **`_smn`** suffix to distinguish converted files from originals (e.g. `invoice_smn.pdf`, `Sale_Certificate_smn.pdf`).
+- **Automated Dealer Stamp & Signature (Ready for RTO Upload)**:
+  - Automates the physical workflow of printing, rubber stamping, signing, and scanning!
+  - Overlays authentic Annapurna Motors circular rubber stamp and dealer signature directly onto the signatory area of Invoices and Sale Certificates.
+  - Enabled by default with a simple checkbox toggle in the web UI.
 - **Batch Processing & ZIP Download**:
   - Drag & drop multiple invoices and sale certificates together.
   - Download converted files individually or all at once in a single `.zip` archive.

@@ -151,6 +151,17 @@ HTML_TEMPLATE = """
                     <span class="form-hint">Format: DD/MM/YYYY. Preserves original invoice time.</span>
                 </div>
             </div>
+            <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-color);">
+                <label style="display: flex; align-items: center; gap: 10px; background: #eff6ff; border: 1px solid #bfdbfe; padding: 12px 16px; border-radius: 8px; cursor: pointer; user-select: none;">
+                    <input type="checkbox" id="stamp-checkbox" checked style="width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer;">
+                    <span style="font-size: 13.5px; font-weight: 600; color: #1e40af;">
+                        ✍️ Affix Annapurna Motors Stamp & Signature (Ready for RTO Upload)
+                    </span>
+                </label>
+                <span class="form-hint" style="margin-top: 6px; display: block; margin-left: 4px;">
+                    Automates Step 3: Overlays authentic Annapurna Motors circular rubber stamp and signature onto the signatory block.
+                </span>
+            </div>
         </div>
 
         <div class="card">
@@ -348,6 +359,8 @@ HTML_TEMPLATE = """
             formData.append('doc_mode', currentMode);
             formData.append('hypothecation', hypo);
             formData.append('new_date', dateVal);
+            const affixStamp = document.getElementById('stamp-checkbox') ? document.getElementById('stamp-checkbox').checked : true;
+            formData.append('affix_stamp', affixStamp ? 'true' : 'false');
             selectedFiles.forEach(f => formData.append('files', f));
 
             try {
@@ -436,6 +449,7 @@ def api_convert():
     uploaded_files = request.files.getlist('files')
     hypothecation = request.form.get('hypothecation', 'KEEP_ORIGINAL')
     new_date = request.form.get('new_date', '').strip()
+    affix_stamp = request.form.get('affix_stamp', 'true').lower() == 'true'
 
     doc_mode = request.form.get('doc_mode', 'invoice')
 
@@ -460,12 +474,12 @@ def api_convert():
         try:
             if doc_mode == 'invoice':
                 doc = fitz.open(in_path)
-                stats = converter.convert_invoice(doc, hypothecation=hypothecation, new_date=new_date)
+                stats = converter.convert_invoice(doc, hypothecation=hypothecation, new_date=new_date, affix_stamp=affix_stamp)
                 doc.save(out_path)
                 doc.close()
             elif doc_mode == 'sale-cert':
                 doc = fitz.open(in_path)
-                stats = converter.convert_sale_certificate(doc, hypothecation=hypothecation, new_date=new_date)
+                stats = converter.convert_sale_certificate(doc, hypothecation=hypothecation, new_date=new_date, affix_stamp=affix_stamp)
                 doc.save(out_path)
                 doc.close()
             else:
@@ -473,7 +487,8 @@ def api_convert():
                     in_path,
                     out_path,
                     hypothecation=hypothecation,
-                    new_date=new_date
+                    new_date=new_date,
+                    affix_stamp=affix_stamp
                 )
 
             file_id = str(uuid.uuid4())
