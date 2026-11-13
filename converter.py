@@ -396,11 +396,12 @@ def convert_sale_certificate(doc: fitz.Document, hypothecation: str = None, new_
     }
 
 
-def apply_scanned_effect(doc: fitz.Document, bw_mode: bool = True, max_kb: int = 270) -> fitz.Document:
+def apply_scanned_effect(doc: fitz.Document, bw_mode: bool = True, stamp_info: dict = None, max_kb: int = 270) -> fitz.Document:
     """
     Renders PDF pages as realistic physically printed, stamped, and scanned pages:
-    - Simulates physical dealer workflow: B&W laser printout with authentic blue/purple seal & signature
-    - Clean paper background without grain, salt-and-pepper noise, or faint dots
+    - Applies Black & White filter to the ENTIRE document BEFORE affixing seal and signature
+    - Green banner and red logos become clean monochrome laser print toner
+    - Affixes authentic blue rubber seal and signature in original color on top of the B&W printout
     - Natural ADF paper feed skew (0.5° - 0.65°)
     - Re-encodes as JPEG quality tuned to keep total size strictly < 280 KB.
     """
@@ -409,45 +410,47 @@ def apply_scanned_effect(doc: fitz.Document, bw_mode: bool = True, max_kb: int =
     num_pages = len(doc)
     target_quality = 68 if num_pages == 1 else 60
 
+    stamp_img = None
+    if stamp_info and os.path.exists("assets/stamp.png"):
+        try:
+            stamp_img = Image.open("assets/stamp.png").convert("RGBA")
+        except Exception:
+            pass
+
     for idx, page in enumerate(doc):
         pix = page.get_pixmap(dpi=150)
         im = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
 
         if bw_mode:
-            # 1. B&W Printout + Authentic Blue Stamp & Signature color preservation
-            arr = np.array(im, dtype=np.float32)
-            r = arr[:, :, 0]
-            g = arr[:, :, 1]
-            b = arr[:, :, 2]
+            # 1. Convert ENTIRE document to Black & White laser print
+            # (Guarantees green banner, red logo, text, tables are 100% monochrome toner)
+            im_gray = im.convert("L")
+            arr = np.array(im_gray, dtype=np.float32)
+            arr = np.where(arr >= 210.0, np.clip(248.0 + (arr - 210.0) * 0.17, 0.0, 255.0), arr * 0.88)
+            arr = np.clip(arr, 0, 255).astype(np.uint8)
+            im_proc = Image.fromarray(arr, mode="L").convert("RGBA")
 
-            max_c = np.maximum(np.maximum(r, g), b)
-            min_c = np.minimum(np.minimum(r, g), b)
-            sat = max_c - min_c
+            # 2. Affix authentic blue rubber seal & signature ON TOP of the B&W printout
+            if idx == 0 and stamp_info and stamp_img:
+                scale = 150.0 / 72.0
+                sw = int(stamp_info["width"] * scale)
+                sh = int(stamp_info["height"] * scale)
+                sx = int(stamp_info["x"] * scale)
+                sy = int(stamp_info["y"] * scale)
+                stamp_resized = stamp_img.resize((sw, sh), Image.Resampling.LANCZOS)
+                im_proc.paste(stamp_resized, (sx, sy), stamp_resized)
 
-            # Rubber stamp & signature: blue/purple hue where b > r or b > g
-            is_blue_tint = (b > r + 3.0) | (b > g + 3.0)
-            color_weight = np.where(is_blue_tint, np.clip((sat - 8.0) / 16.0, 0.0, 1.0), 0.0)
-
-            # Grayscale toner for monochrome B&W laser print
-            gray = 0.299 * r + 0.587 * g + 0.114 * b
-            gray_toner = np.where(gray >= 210.0, np.clip(248.0 + (gray - 210.0) * 0.17, 0.0, 255.0), gray * 0.88)
-
-            out_arr = np.zeros_like(arr)
-            for c in range(3):
-                out_arr[:, :, c] = color_weight * arr[:, :, c] + (1.0 - color_weight) * gray_toner
-
-            out_arr = np.clip(out_arr, 0, 255).astype(np.uint8)
-            im_proc = Image.fromarray(out_arr, mode="RGB")
+            im_proc = im_proc.convert("RGB")
             fill_val = (255, 255, 255)
         else:
-            # Color scan with clean background
+            # Color scan mode
             arr = np.array(im, dtype=np.float32)
             arr = np.where(arr >= 210.0, np.clip(248.0 + (arr - 210.0) * 0.17, 0, 255), arr * 0.92)
             arr = np.clip(arr, 0, 255).astype(np.uint8)
             im_proc = Image.fromarray(arr, mode="RGB")
             fill_val = (255, 255, 255)
 
-        # 2. Authentic ADF paper feed tilt
+        # 3. Authentic ADF paper feed tilt
         angle = angles[idx % len(angles)]
         im_rot = im_proc.rotate(angle, resample=Image.Resampling.BICUBIC, expand=False, fillcolor=fill_val)
 
@@ -585,10 +588,22 @@ def convert_document(input_path: str, output_path: str, hypothecation: str = Non
     if is_invoice and len(doc) > 1:
         doc.select([0])
 
-    # Apply scanned effect (printing & scanning imperfections, dull colors, tilt, grain)
-    # or size optimization if scanned effect is disabled
+    # Determine stamp positioning info for scanned effect
+    if affix_stamp:
+        if is_invoice:
+            stamp_info = {"x": 436.0, "y": 626.0, "width": 98.0, "height": 92.0}
+        elif detected_type == "sale_certificate" or "sale_certificate" in types_found:
+            stamp_info = {"x": 436.0, "y": 585.0, "width": 98.0, "height": 93.0}
+        elif detected_type == "form_22":
+            stamp_info = {"x": 180.0, "y": 688.0, "width": 88.0, "height": 90.0}
+        else:
+            stamp_info = {"x": 436.0, "y": 626.0, "width": 98.0, "height": 92.0}
+    else:
+        stamp_info = None
+
+    # Apply scanned effect (B&W laser print filter applied FIRST, then stamp affixed on top in color)
     if scanned_effect:
-        scanned_doc = apply_scanned_effect(doc, bw_mode=bw_mode)
+        scanned_doc = apply_scanned_effect(doc, bw_mode=bw_mode, stamp_info=stamp_info)
         doc.close()
         doc = scanned_doc
     else:
