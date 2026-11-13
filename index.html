@@ -103,7 +103,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <span class="badge">Shanti Motors ➔ Annapurna Motors • v2.5 Single-Page Invoice</span>
+            <span class="badge">Shanti Motors ➔ Annapurna Motors • v2.6 Clean B&W Scanner</span>
             <h1 class="title">Hero Document Converter</h1>
             <p class="subtitle">Pixel-perfect conversion for Hero MotoCorp Invoices & Form 21 Sale Certificates</p>
         </div>
@@ -151,22 +151,11 @@
                 <label style="display: flex; align-items: center; gap: 10px; background: #fefce8; border: 1px solid #fef08a; padding: 12px 16px; border-radius: 8px; cursor: pointer; user-select: none;">
                     <input type="checkbox" id="scanned-look-checkbox" checked style="width: 18px; height: 18px; accent-color: #ca8a04; cursor: pointer;">
                     <span style="font-size: 13.5px; font-weight: 600; color: #854d0e;">
-                        📄 Realistic Scanned Look (Scan & Print Imperfections, Dull Colors, Anti-Digital Look)
+                        📄 Realistic B&amp;W Scanned Look (Clean Office Scanner, Paper Feed Tilt, Anti-Digital)
                     </span>
                 </label>
                 <span class="form-hint" style="margin-top: 6px; display: block; margin-left: 4px;">
-                    Simulates physical print & ADF feeder scan: adds authentic tilt (0.6° - 0.8°), toner specks, paper grain, and uneven ink density so documents look genuinely scanned for RTO portals. Strictly under 280 KB.
-                </span>
-            </div>
-            <div style="margin-top: 10px;">
-                <label style="display: flex; align-items: center; gap: 10px; background: #f8fafc; border: 1px solid #cbd5e1; padding: 12px 16px; border-radius: 8px; cursor: pointer; user-select: none;">
-                    <input type="checkbox" id="bw-mode-checkbox" checked style="width: 18px; height: 18px; accent-color: #334155; cursor: pointer;">
-                    <span style="font-size: 13.5px; font-weight: 600; color: #1e293b;">
-                        🖨️ Black & White Scanner & Printer Mode (Monochrome / Grayscale — No Color)
-                    </span>
-                </label>
-                <span class="form-hint" style="margin-top: 6px; display: block; margin-left: 4px;">
-                    Matches a B&amp;W office laser printer &amp; scanner: converts all text and rubber stamps into authentic monochrome toner. Uncheck if you want color scan.
+                    Simulates physical print &amp; B&amp;W scanner: authentic monochrome laser toner, clean paper background with zero grain/faint dots, subtle roller feed tilt, and genuine scanned appearance for RTO portals. Strictly under 280 KB.
                 </span>
             </div>
         </div>
@@ -365,8 +354,8 @@
                 const pdf = await loadingTask.promise;
                 const newDoc = await PDFLib.PDFDocument.create();
 
-                const angles = [0.72, -0.65, 0.68, -0.58];
-                const targetQuality = (maxPages === 1 || pdf.numPages === 1) ? 0.64 : 0.56;
+                const angles = [0.55, -0.48, 0.50, -0.42];
+                const targetQuality = (maxPages === 1 || pdf.numPages === 1) ? 0.68 : 0.60;
                 const numPagesToProcess = maxPages ? Math.min(pdf.numPages, maxPages) : pdf.numPages;
 
                 for (let p = 1; p <= numPagesToProcess; p++) {
@@ -389,8 +378,8 @@
                     destCanvas.height = viewport.height;
                     const destCtx = destCanvas.getContext('2d');
 
-                    // Fill with paper color: bright off-white for B&W, warm for color
-                    destCtx.fillStyle = bwMode ? '#fcfcfc' : '#faf9f7';
+                    // Fill with paper color: clean bright paper tone
+                    destCtx.fillStyle = '#ffffff';
                     destCtx.fillRect(0, 0, destCanvas.width, destCanvas.height);
 
                     // Apply realistic ADF scanner rotation and micro-shift
@@ -400,12 +389,12 @@
                     destCtx.save();
                     destCtx.translate(destCanvas.width / 2, destCanvas.height / 2);
                     destCtx.rotate(angleRad);
-                    const shiftX = Math.sign(angleDeg) * 3;
-                    const shiftY = 2;
+                    const shiftX = Math.sign(angleDeg) * 2;
+                    const shiftY = 1.5;
                     destCtx.drawImage(srcCanvas, -srcCanvas.width / 2 + shiftX, -srcCanvas.height / 2 + shiftY);
                     destCtx.restore();
 
-                    // 3. Add scanner/printer imperfections: B&W conversion, toner specks & paper grain
+                    // 3. Add clean B&W scanner/printer effect without grainy dots or noise
                     try {
                         const imgData = destCtx.getImageData(0, 0, destCanvas.width, destCanvas.height);
                         const d = imgData.data;
@@ -415,36 +404,31 @@
                             if (bwMode) {
                                 // Grayscale luminance
                                 let gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-                                // Scanner contrast & toner threshold curve
-                                if (gray > 200) {
-                                    gray = 242 + (gray - 200) * 0.22;
+                                // Clean background vs authentic laser toner separation
+                                if (gray >= 210) {
+                                    // Smooth paper background: clean white, NO grain, NO faint dots
+                                    gray = Math.min(255, 248 + (gray - 210) * 0.17);
                                 } else {
-                                    gray = gray * 0.88 + 12.0;
+                                    // Rich laser toner text and rubber stamp
+                                    gray = Math.max(0, gray * 0.88);
                                 }
-                                // Random toner specks & scanner glass dust particles (salt & pepper)
-                                if (Math.random() < 0.0003) {
-                                    gray = Math.random() * 50 + 25;
-                                }
-                                // Scanner sensor noise & paper fiber texture
-                                const n = (Math.random() - 0.5) * 6.5;
-                                gray = Math.min(255, Math.max(0, gray + n));
                                 d[i] = gray;
                                 d[i + 1] = gray;
                                 d[i + 2] = gray;
                             } else {
-                                // Color mode with dulled colors & toner specks
-                                const n = (Math.random() - 0.5) * 6.5;
-                                const isSpeck = Math.random() < 0.0003;
-                                const speckVal = Math.random() * 50 + 25;
                                 for (let c = 0; c < 3; c++) {
-                                    let v = isSpeck ? speckVal : (d[i + c] * 0.925 + 16.0);
-                                    d[i + c] = Math.min(255, Math.max(0, v + n));
+                                    let v = d[i + c];
+                                    if (v >= 210) {
+                                        d[i + c] = Math.min(255, 248 + (v - 210) * 0.17);
+                                    } else {
+                                        d[i + c] = Math.max(0, v * 0.92);
+                                    }
                                 }
                             }
                         }
                         destCtx.putImageData(imgData, 0, 0);
                     } catch (e) {
-                        console.warn('Scan imperfection processing skipped:', e);
+                        console.warn('Scan processing skipped:', e);
                     }
 
                     // 4. Encode as JPEG
@@ -473,10 +457,10 @@
                         c.width = viewport.width;
                         c.height = viewport.height;
                         const ctx = c.getContext('2d');
-                        ctx.fillStyle = bwMode ? '#fcfcfc' : '#faf9f7';
+                        ctx.fillStyle = '#ffffff';
                         ctx.fillRect(0, 0, c.width, c.height);
                         if (bwMode) {
-                            ctx.filter = 'grayscale(100%) contrast(1.1) brightness(0.96)';
+                            ctx.filter = 'grayscale(100%) contrast(1.1) brightness(0.98)';
                         }
                         await page.render({ canvasContext: ctx, viewport: viewport }).promise;
 
@@ -576,7 +560,7 @@
             const dateVal = document.getElementById('date-input').value.trim();
             const affixStamp = document.getElementById('stamp-checkbox') ? document.getElementById('stamp-checkbox').checked : true;
             const scannedLook = document.getElementById('scanned-look-checkbox') ? document.getElementById('scanned-look-checkbox').checked : true;
-            const bwMode = document.getElementById('bw-mode-checkbox') ? document.getElementById('bw-mode-checkbox').checked : true;
+            const bwMode = scannedLook; // Clubbed toggle: Scanned look is authentic B&W office scanner & printer mode
 
             btn.disabled = true;
             progressBox.style.display = 'block';
@@ -960,9 +944,7 @@
                 }
                 const sizeBadge = r.sizeKb ? `<span style="font-size:11px; background:#f1f5f9; color:#475569; padding:2px 6px; border-radius:4px; margin-left:6px; font-weight:600;">${r.sizeKb} KB</span>` : '';
                 const scanBadge = r.scannedLook 
-                    ? (r.bwMode 
-                        ? `<span style="font-size:11px; background:#f1f5f9; color:#1e293b; padding:2px 6px; border-radius:4px; margin-left:6px; font-weight:600;">🖨️ B&W Scan</span>` 
-                        : `<span style="font-size:11px; background:#fef3c7; color:#854d0e; padding:2px 6px; border-radius:4px; margin-left:6px; font-weight:600;">📄 Color Scan</span>`) 
+                    ? `<span style="font-size:11px; background:#f1f5f9; color:#1e293b; padding:2px 6px; border-radius:4px; margin-left:6px; font-weight:600;">🖨️ B&W Scan</span>` 
                     : '';
 
                 return `
