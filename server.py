@@ -164,6 +164,17 @@ HTML_TEMPLATE = """
                     Automates Step 3: Overlays authentic Annapurna Motors circular rubber stamp and signature onto the signatory block.
                 </span>
             </div>
+            <div style="margin-top: 10px;">
+                <label style="display: flex; align-items: center; gap: 10px; background: #fefce8; border: 1px solid #fef08a; padding: 12px 16px; border-radius: 8px; cursor: pointer; user-select: none;">
+                    <input type="checkbox" id="scanned-look-checkbox" checked style="width: 18px; height: 18px; accent-color: #ca8a04; cursor: pointer;">
+                    <span style="font-size: 13.5px; font-weight: 600; color: #854d0e;">
+                        📄 Realistic Scanned Look (Scan & Print Imperfections, Dull Colors, Anti-Digital Look)
+                    </span>
+                </label>
+                <span class="form-hint" style="margin-top: 6px; display: block; margin-left: 4px;">
+                    Dulls bright digital colors, lifts ink black levels, adds authentic scanner tilt & subtle paper grain so documents look genuinely scanned for RTO portals. Strictly under 280 KB.
+                </span>
+            </div>
         </div>
 
         <div class="card">
@@ -384,6 +395,8 @@ HTML_TEMPLATE = """
             formData.append('new_date', dateVal);
             const affixStamp = document.getElementById('stamp-checkbox') ? document.getElementById('stamp-checkbox').checked : true;
             formData.append('affix_stamp', affixStamp ? 'true' : 'false');
+            const scannedLook = document.getElementById('scanned-look-checkbox') ? document.getElementById('scanned-look-checkbox').checked : true;
+            formData.append('scanned_look', scannedLook ? 'true' : 'false');
             selectedFiles.forEach(f => formData.append('files', f));
 
             try {
@@ -428,11 +441,12 @@ HTML_TEMPLATE = """
                     typeTag = '<span class="result-type-tag tag-both">Invoice + Certificate</span>';
                 }
                 const sizeBadge = f.file_size_kb ? `<span style="font-size:11px; background:#f1f5f9; color:#475569; padding:2px 6px; border-radius:4px; margin-left:6px; font-weight:600;">${f.file_size_kb} KB</span>` : '';
+                const scanBadge = f.scanned_look ? `<span style="font-size:11px; background:#fef3c7; color:#854d0e; padding:2px 6px; border-radius:4px; margin-left:6px; font-weight:600;">📄 Scanned Look</span>` : '';
 
                 return `
                 <div class="result-item">
                     <div>
-                        <div>${typeTag}<strong>${f.converted_name}</strong>${sizeBadge}</div>
+                        <div>${typeTag}<strong>${f.converted_name}</strong>${sizeBadge}${scanBadge}</div>
                         <div style="font-size: 11px; color: var(--text-muted); margin-top: 3px;">
                             ${f.doc_type === 'form_22' ? 'Dealer stamp affixed in blank area (strictly < 280 KB)' : `Headers replaced: ${f.headers_replaced} | Signatory replaced: ${f.footers_replaced}`}
                         </div>
@@ -476,6 +490,7 @@ def api_convert():
     hypothecation = request.form.get('hypothecation', 'KEEP_ORIGINAL')
     new_date = request.form.get('new_date', '').strip()
     affix_stamp = request.form.get('affix_stamp', 'true').lower() == 'true'
+    scanned_look = request.form.get('scanned_look', 'true').lower() == 'true'
 
     doc_mode = request.form.get('doc_mode', 'invoice')
 
@@ -512,7 +527,8 @@ def api_convert():
                 doc_type=target_doc_type,
                 hypothecation=hypothecation,
                 new_date=new_date,
-                affix_stamp=affix_stamp
+                affix_stamp=affix_stamp,
+                scanned_effect=scanned_look
             )
 
             file_id = str(uuid.uuid4())
@@ -534,7 +550,8 @@ def api_convert():
                 'doc_type': stats.get('doc_type', 'invoice'),
                 'headers_replaced': stats.get('headers_replaced', 0),
                 'footers_replaced': stats.get('footers_replaced', 0),
-                'file_size_kb': file_size_kb
+                'file_size_kb': file_size_kb,
+                'scanned_look': scanned_look
             })
         except Exception as e:
             return jsonify({'error': str(e)}), 500

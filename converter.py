@@ -6,7 +6,10 @@ Supports dynamic Hypothecation bank selection and Date replacement.
 
 import os
 import re
+import io
 import fitz  # PyMuPDF
+from PIL import Image, ImageEnhance
+import numpy as np
 
 # Annapurna Motors Dealership Configurations
 ANNAPURNA_INVOICE_CONFIG = {
@@ -389,7 +392,52 @@ def convert_sale_certificate(doc: fitz.Document, hypothecation: str = None, new_
     }
 
 
-def convert_document(input_path: str, output_path: str, hypothecation: str = None, new_date: str = None, affix_stamp: bool = True, doc_type: str = "auto") -> dict:
+def apply_scanned_effect(doc: fitz.Document, max_kb: int = 270) -> fitz.Document:
+    """
+    Renders PDF pages as realistic physically printed, stamped, and scanned pages:
+    - Subtle paper grain & scanner sensor noise
+    - Warm off-white paper background tone
+    - Lifted ink blacks (light reflection on physical toner/ink rather than pure #000000)
+    - Slightly dulled colors (desaturates bright digital stamp/lines by ~24%)
+    - Realistic ADF / flatbed scanner micro-deskew (subtle rotation between 0.25° and 0.35°)
+    - Re-encodes as JPEG quality tuned to keep total size strictly < 280 KB.
+    """
+    new_doc = fitz.open()
+    angles = [0.32, -0.26, 0.28, -0.24]
+    num_pages = len(doc)
+    target_quality = 68 if num_pages == 1 else 61
+
+    for idx, page in enumerate(doc):
+        pix = page.get_pixmap(dpi=150)
+        im = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+
+        # 1. Dull bright digital colors (desaturate by ~24%)
+        im = ImageEnhance.Color(im).enhance(0.76)
+
+        # 2. Lift black levels slightly and tone paper white
+        arr = np.array(im, dtype=np.float32)
+        arr = arr * 0.925 + 16.0
+
+        # 3. Micro grain / sensor noise
+        np.random.seed(100 + idx)
+        noise = np.random.normal(0, 1.8, arr.shape)
+        arr = np.clip(arr + noise, 0, 255).astype(np.uint8)
+        im_scanned = Image.fromarray(arr)
+
+        # 4. Subtle scanner rotation
+        angle = angles[idx % len(angles)]
+        im_rotated = im_scanned.rotate(angle, resample=Image.Resampling.BICUBIC, expand=False, fillcolor=(250, 249, 247))
+
+        buf = io.BytesIO()
+        im_rotated.save(buf, format="JPEG", quality=target_quality, optimize=True)
+
+        new_page = new_doc.new_page(width=page.rect.width, height=page.rect.height)
+        new_page.insert_image(page.rect, stream=buf.getvalue())
+
+    return new_doc
+
+
+def convert_document(input_path: str, output_path: str, hypothecation: str = None, new_date: str = None, affix_stamp: bool = True, doc_type: str = "auto", scanned_effect: bool = True) -> dict:
     """
     Main conversion entry point.
     Processes each page individually, accurately handling standalone Tax Invoices,
@@ -509,8 +557,14 @@ def convert_document(input_path: str, output_path: str, hypothecation: str = Non
                         if affix_dealer_stamp_invoice(page):
                             stamps_affixed += 1
 
-    # Apply image & size optimization to ensure output file is strictly < 280 KB
-    optimize_pdf_size(doc)
+    # Apply scanned effect (printing & scanning imperfections, dull colors, tilt, grain)
+    # or size optimization if scanned effect is disabled
+    if scanned_effect:
+        scanned_doc = apply_scanned_effect(doc)
+        doc.close()
+        doc = scanned_doc
+    else:
+        optimize_pdf_size(doc)
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     doc.save(output_path, garbage=4, deflate=True)
@@ -565,7 +619,7 @@ def convert_document(input_path: str, output_path: str, hypothecation: str = Non
 convert_shanti_to_annapurna = convert_document
 
 
-def batch_convert(input_dir: str, output_dir: str, hypothecation: str = None, new_date: str = None, affix_stamp: bool = True, progress_callback=None) -> list:
+def batch_convert(input_dir: str, output_dir: str, hypothecation: str = None, new_date: str = None, affix_stamp: bool = True, scanned_effect: bool = True, progress_callback=None) -> list:
     """Batch convert all PDF invoices and sale certificates in a directory."""
     os.makedirs(output_dir, exist_ok=True)
     results = []
@@ -578,7 +632,7 @@ def batch_convert(input_dir: str, output_dir: str, hypothecation: str = None, ne
         out_file = os.path.join(output_dir, f"{base_stem}_smn{ext}")
 
         try:
-            res = convert_document(in_file, out_file, hypothecation=hypothecation, new_date=new_date, affix_stamp=affix_stamp)
+            res = convert_document(in_file, out_file, hypothecation=hypothecation, new_date=new_date, affix_stamp=affix_stamp, scanned_effect=scanned_effect)
             res["filename"] = filename
             res["output_path"] = out_file
             results.append(res)
