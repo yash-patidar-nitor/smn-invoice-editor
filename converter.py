@@ -209,7 +209,7 @@ def update_date_sale_certificate(page: fitz.Page, new_date_str: str) -> bool:
 
 
 def convert_invoice(doc: fitz.Document, hypothecation: str = None, new_date: str = None, affix_stamp: bool = True) -> dict:
-    """Convert a Shanti Motors Tax Invoice into Annapurna Motors format. Strictly touches Page 1 only."""
+    """Convert a Shanti Motors Tax Invoice into Annapurna Motors format. Strictly touches invoice content, leaves Terms untouched."""
     cfg = ANNAPURNA_INVOICE_CONFIG
     headers_replaced = 0
     footers_replaced = 0
@@ -217,54 +217,61 @@ def convert_invoice(doc: fitz.Document, hypothecation: str = None, new_date: str
     if len(doc) == 0:
         return {"doc_type": "invoice", "headers_replaced": 0, "footers_replaced": 0, "stamp_affixed": False}
 
-    # Invoice content is strictly on Page 0 (Page 1 is Terms & Conditions which must stay untouched)
-    page = doc[0]
+    for p_idx, page in enumerate(doc):
+        # Never touch the final page if it is Terms & Conditions
+        if len(doc) > 1 and p_idx == len(doc) - 1:
+            continue
 
-    # 1. Replace Header on Page 0
-    shanti_hits = page.search_for("SHANTI MOTORS")
-    gstin_hits = page.search_for("23AQMPP0120E1ZE")
-    header_hit = any(h.y0 < 200 for h in shanti_hits)
+        # 1. Replace Header on Page 0
+        if p_idx == 0:
+            shanti_hits = page.search_for("SHANTI MOTORS")
+            gstin_hits = page.search_for("23AQMPP0120E1ZE")
+            header_hit = any(h.y0 < 200 for h in shanti_hits)
 
-    if header_hit or (gstin_hits and gstin_hits[0].y0 < 200):
-        header_rect = fitz.Rect(26.0, 106.0, 440.0, 170.0)
-        page.add_redact_annot(header_rect, fill=(1, 1, 1))
+            if header_hit or (gstin_hits and gstin_hits[0].y0 < 200):
+                header_rect = fitz.Rect(26.0, 106.0, 440.0, 170.0)
+                page.add_redact_annot(header_rect, fill=(1, 1, 1))
+                page.apply_redactions()
+
+                page.insert_text((28.35, 120.5), cfg["dealer_name"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                page.insert_text((28.35, 131.0), cfg["address_line1"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                page.insert_text((28.35, 142.0), cfg["address_line2"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                page.insert_text((28.35, 153.0), cfg["dealer_auth"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                page.insert_text((28.35, 164.0), cfg["gstin_pan"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                headers_replaced += 1
+
+            if hypothecation:
+                update_hypothecation_invoice(page, hypothecation)
+
+            if new_date:
+                update_date_invoice(page, new_date)
+
+        # 2. Obliterate ANY and ALL Shanti Motors references in the right-side signatory block
+        signatory_hit = False
+        for term in ["SHANTI MOTORS", "Shanti Motors", "shanti motors", "M/S.SHANTI", "M/s.Shanti", "For M/S", "For M/s", "For  M"]:
+            for h in page.search_for(term):
+                if h.y0 > 200 and h.x0 > 380:
+                    page.add_redact_annot(fitz.Rect(430.0, h.y0 - 5, 585.0, h.y1 + 5), fill=(1, 1, 1))
+                    signatory_hit = True
+
+        # Blanket-redact both candidate vertical bands to guarantee NO residual text leaks
+        page.add_redact_annot(fitz.Rect(430.0, 590.0, 585.0, 615.0), fill=(1, 1, 1))
+        page.add_redact_annot(fitz.Rect(430.0, 630.0, 585.0, 655.0), fill=(1, 1, 1))
         page.apply_redactions()
 
-        page.insert_text((28.35, 120.5), cfg["dealer_name"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-        page.insert_text((28.35, 131.0), cfg["address_line1"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-        page.insert_text((28.35, 142.0), cfg["address_line2"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-        page.insert_text((28.35, 153.0), cfg["dealer_auth"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-        page.insert_text((28.35, 164.0), cfg["gstin_pan"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-        headers_replaced += 1
+        # Insert For ANNAPURNA MOTORS cleanly right-aligned
+        if p_idx == 0 or signatory_hit:
+            footer_text = cfg["footer_signatory"]
+            text_len = fitz.get_text_length(footer_text, fontname="helv", fontsize=9.0)
+            target_x = max(28.35, 577.05 - text_len)
+            target_y = 647.5 if p_idx == 0 else 226.0
+            page.insert_text((target_x, target_y), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
+            footers_replaced += 1
 
-    # 2. Update Hypothecation on Page 0
-    if hypothecation:
-        update_hypothecation_invoice(page, hypothecation)
-
-    # 3. Update Date on Page 0
-    if new_date:
-        update_date_invoice(page, new_date)
-
-    # 4. Replace Footer Signatory on Page 0
-    footer_hits = [h for h in page.search_for("SHANTI MOTORS") if h.y0 > 200]
-    if not footer_hits:
-        footer_hits = [h for h in page.search_for("M/S.SHANTI MOTORS") if h.y0 > 200]
-
-    for rect in footer_hits:
-        expanded_rect = fitz.Rect(rect.x0 - 55, rect.y0 - 2, rect.x1 + 30, rect.y1 + 2)
-        page.add_redact_annot(expanded_rect, fill=(1, 1, 1))
-        page.apply_redactions()
-
-        footer_text = cfg["footer_signatory"]
-        text_len = fitz.get_text_length(footer_text, fontname="helv", fontsize=9.0)
-        target_x = max(28.35, 577.05 - text_len)
-        page.insert_text((target_x, rect.y1 - 1.5), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
-        footers_replaced += 1
-
-    # 5. Affix Authentic Stamp & Signature
+    # 3. Affix Authentic Stamp & Signature on Page 0
     stamp_affixed = False
-    if affix_stamp:
-        stamp_affixed = affix_dealer_stamp_invoice(page)
+    if affix_stamp and len(doc) > 0:
+        stamp_affixed = affix_dealer_stamp_invoice(doc[0])
 
     return {
         "doc_type": "invoice",
@@ -305,21 +312,22 @@ def convert_sale_certificate(doc: fitz.Document, hypothecation: str = None, new_
         if new_date:
             update_date_sale_certificate(page, new_date)
 
-        # 4. Replace Footer Signatory ('For M/s.Shanti Motors')
-        footer_hits = [h for h in page.search_for("Shanti Motors") if h.y0 > 200]
-        if not footer_hits:
-            footer_hits = [h for h in page.search_for("SHANTI MOTORS") if h.y0 > 200]
+        # 4. Obliterate ANY and ALL Shanti Motors references in signatory block
+        for term in ["SHANTI MOTORS", "Shanti Motors", "shanti motors", "M/S.SHANTI", "M/s.Shanti", "For M/S", "For M/s", "For  M"]:
+            for h in page.search_for(term):
+                if h.y0 > 200 and h.x0 > 380:
+                    page.add_redact_annot(fitz.Rect(430.0, h.y0 - 5, 585.0, h.y1 + 5), fill=(1, 1, 1))
 
-        for rect in footer_hits:
-            expanded_rect = fitz.Rect(rect.x0 - 55, rect.y0 - 2, rect.x1 + 30, rect.y1 + 2)
-            page.add_redact_annot(expanded_rect, fill=(1, 1, 1))
-            page.apply_redactions()
+        # Blanket-redact both candidate vertical bands to guarantee NO residual text leaks
+        page.add_redact_annot(fitz.Rect(430.0, 590.0, 585.0, 615.0), fill=(1, 1, 1))
+        page.add_redact_annot(fitz.Rect(430.0, 630.0, 585.0, 655.0), fill=(1, 1, 1))
+        page.apply_redactions()
 
-            footer_text = cfg["footer_signatory"]
-            text_len = fitz.get_text_length(footer_text, fontname="helv", fontsize=9.0)
-            target_x = max(56.7, 570.0 - text_len)
-            page.insert_text((target_x, 605.0), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
-            footers_replaced += 1
+        footer_text = cfg["footer_signatory"]
+        text_len = fitz.get_text_length(footer_text, fontname="helv", fontsize=9.0)
+        target_x = max(56.7, 570.0 - text_len)
+        page.insert_text((target_x, 605.0), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
+        footers_replaced += 1
 
         # 5. Affix Authentic Stamp & Signature
         if affix_stamp:
@@ -371,19 +379,22 @@ def convert_document(input_path: str, output_path: str, hypothecation: str = Non
             if new_date:
                 update_date_sale_certificate(page, new_date)
 
-            footer_hits = [h for h in page.search_for("Shanti Motors") if h.y0 > 200]
-            if not footer_hits:
-                footer_hits = [h for h in page.search_for("SHANTI MOTORS") if h.y0 > 200]
+            # Obliterate ANY and ALL Shanti Motors references in signatory block
+            for term in ["SHANTI MOTORS", "Shanti Motors", "shanti motors", "M/S.SHANTI", "M/s.Shanti", "For M/S", "For M/s", "For  M"]:
+                for h in page.search_for(term):
+                    if h.y0 > 200 and h.x0 > 380:
+                        page.add_redact_annot(fitz.Rect(430.0, h.y0 - 5, 585.0, h.y1 + 5), fill=(1, 1, 1))
 
-            for rect in footer_hits:
-                expanded_rect = fitz.Rect(rect.x0 - 55, rect.y0 - 2, rect.x1 + 30, rect.y1 + 2)
-                page.add_redact_annot(expanded_rect, fill=(1, 1, 1))
-                page.apply_redactions()
-                footer_text = ANNAPURNA_SC_CONFIG["footer_signatory"]
-                text_len = fitz.get_text_length(footer_text, fontname="helv", fontsize=9.0)
-                target_x = max(56.7, 570.0 - text_len)
-                page.insert_text((target_x, 605.0), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                footers_replaced += 1
+            # Blanket-redact both candidate vertical bands
+            page.add_redact_annot(fitz.Rect(430.0, 590.0, 585.0, 615.0), fill=(1, 1, 1))
+            page.add_redact_annot(fitz.Rect(430.0, 630.0, 585.0, 655.0), fill=(1, 1, 1))
+            page.apply_redactions()
+
+            footer_text = ANNAPURNA_SC_CONFIG["footer_signatory"]
+            text_len = fitz.get_text_length(footer_text, fontname="helv", fontsize=9.0)
+            target_x = max(56.7, 570.0 - text_len)
+            page.insert_text((target_x, 605.0), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
+            footers_replaced += 1
 
             if affix_stamp:
                 if affix_dealer_stamp_sale_certificate(page):
@@ -415,19 +426,22 @@ def convert_document(input_path: str, output_path: str, hypothecation: str = Non
                 if new_date:
                     update_date_invoice(page, new_date)
 
-                footer_hits = [h for h in page.search_for("SHANTI MOTORS") if h.y0 > 200]
-                if not footer_hits:
-                    footer_hits = [h for h in page.search_for("M/S.SHANTI MOTORS") if h.y0 > 200]
+                # Obliterate ANY and ALL Shanti Motors references in signatory block
+                for term in ["SHANTI MOTORS", "Shanti Motors", "shanti motors", "M/S.SHANTI", "M/s.Shanti", "For M/S", "For M/s", "For  M"]:
+                    for h in page.search_for(term):
+                        if h.y0 > 200 and h.x0 > 380:
+                            page.add_redact_annot(fitz.Rect(430.0, h.y0 - 5, 585.0, h.y1 + 5), fill=(1, 1, 1))
 
-                for rect in footer_hits:
-                    expanded_rect = fitz.Rect(rect.x0 - 55, rect.y0 - 2, rect.x1 + 30, rect.y1 + 2)
-                    page.add_redact_annot(expanded_rect, fill=(1, 1, 1))
-                    page.apply_redactions()
-                    footer_text = ANNAPURNA_INVOICE_CONFIG["footer_signatory"]
-                    text_len = fitz.get_text_length(footer_text, fontname="helv", fontsize=9.0)
-                    target_x = max(28.35, 577.05 - text_len)
-                    page.insert_text((target_x, rect.y1 - 1.5), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                    footers_replaced += 1
+                # Blanket-redact both candidate vertical bands
+                page.add_redact_annot(fitz.Rect(430.0, 590.0, 585.0, 615.0), fill=(1, 1, 1))
+                page.add_redact_annot(fitz.Rect(430.0, 630.0, 585.0, 655.0), fill=(1, 1, 1))
+                page.apply_redactions()
+
+                footer_text = ANNAPURNA_INVOICE_CONFIG["footer_signatory"]
+                text_len = fitz.get_text_length(footer_text, fontname="helv", fontsize=9.0)
+                target_x = max(28.35, 577.05 - text_len)
+                page.insert_text((target_x, 647.5), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                footers_replaced += 1
 
                 if affix_stamp:
                     if affix_dealer_stamp_invoice(page):

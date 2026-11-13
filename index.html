@@ -378,9 +378,10 @@
         }
 
         function isSaleCertificateBuffer(arrayBuffer, fileName) {
-            if (fileName.toLowerCase().includes('sale') || fileName.toLowerCase().includes('cert')) return true;
+            const fn = (fileName || '').toLowerCase();
+            if (fn.includes('sale') || fn.includes('cert') || fn.includes('form') || fn.includes('21')) return true;
             try {
-                const slice = new TextDecoder('latin1').decode(new Uint8Array(arrayBuffer.slice(0, 16384)));
+                const slice = new TextDecoder('latin1').decode(new Uint8Array(arrayBuffer.slice(0, 32768)));
                 if (slice.includes('SALE CERTIFICATE') || slice.includes('Form No') || slice.includes('Form 21')) return true;
             } catch(e) {}
             return false;
@@ -444,12 +445,21 @@
                     }
                 }
 
-                // 4. Signatory in Invoice (Page 0 only)
+                // 4. Signatory in Invoice (Page 0)
+                // Blanket-erase BOTH candidate signatory rows (590-615 and 630-655) on the right side (x: 430 to 585)
+                // to permanently ensure NO residual 'For M/S.SHANTI MOTORS' or duplicate text can EVER leak through!
                 page.drawRectangle({
-                    x: 440.0,
-                    y: pageHeight - 651.0,
-                    width: 145.0,
-                    height: 16.0,
+                    x: 430.0,
+                    y: pageHeight - 615.0,
+                    width: 155.0,
+                    height: 25.0,
+                    color: PDFLib.rgb(1, 1, 1)
+                });
+                page.drawRectangle({
+                    x: 430.0,
+                    y: pageHeight - 655.0,
+                    width: 155.0,
+                    height: 25.0,
                     color: PDFLib.rgb(1, 1, 1)
                 });
                 const invFooterText = 'For ANNAPURNA MOTORS';
@@ -469,6 +479,35 @@
                     } catch(e) {
                         console.error('Failed to overlay stamp on invoice:', e);
                     }
+                }
+            }
+
+            // Handle multi-page wrapped invoice (e.g. 3-page invoice where signatory is pushed to Page 1)
+            if (pages.length > 2) {
+                const page1 = pages[1];
+                const p1Height = page1.getHeight();
+                // Blanket-erase wrapped signatory area
+                page1.drawRectangle({
+                    x: 430.0,
+                    y: p1Height - 235.0,
+                    width: 155.0,
+                    height: 25.0,
+                    color: PDFLib.rgb(1, 1, 1)
+                });
+                const invFooterText = 'For ANNAPURNA MOTORS';
+                const invLen = helv.widthOfTextAtSize(invFooterText, 9);
+                page1.drawText(invFooterText, { x: 577.05 - invLen, y: p1Height - 226.0, size: 9, font: helv });
+
+                if (affixStamp && typeof STAMP_BASE64 !== 'undefined' && STAMP_BASE64) {
+                    try {
+                        const stampImg = await pdfDoc.embedPng('data:image/png;base64,' + STAMP_BASE64);
+                        page1.drawImage(stampImg, {
+                            x: 438,
+                            y: p1Height - 340,
+                            width: 86,
+                            height: 86
+                        });
+                    } catch(e) {}
                 }
             }
 
@@ -545,12 +584,21 @@
                     }
                 }
 
-                // 4. Signatory: strictly y=594.0 to 610.0
+                // 4. Signatory in Sale Certificate
+                // Blanket-erase BOTH candidate signatory rows (590-615 and 630-655) on the right side (x: 430 to 585)
+                // to permanently ensure NO residual 'For M/s.Shanti Motors' or duplicate text can EVER leak through!
                 page.drawRectangle({
-                    x: 460.0,
-                    y: pageHeight - 610.0,
-                    width: 120.0,
-                    height: 16.0,
+                    x: 430.0,
+                    y: pageHeight - 615.0,
+                    width: 155.0,
+                    height: 25.0,
+                    color: PDFLib.rgb(1, 1, 1)
+                });
+                page.drawRectangle({
+                    x: 430.0,
+                    y: pageHeight - 655.0,
+                    width: 155.0,
+                    height: 25.0,
                     color: PDFLib.rgb(1, 1, 1)
                 });
                 const scFooterText = 'For ANNAPURNA MOTORS';
