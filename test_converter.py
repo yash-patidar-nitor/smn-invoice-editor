@@ -157,6 +157,37 @@ def test_mock_ci():
         doc_inv_out.close()
         print("MOCK INVOICE CI TEST PASSED!")
 
+        # 3. Mock Form 22
+        mock_f22 = os.path.join(tmpdir, "mock_form22.pdf")
+        doc_f22 = fitz.open()
+        p_f22 = doc_f22.new_page(width=595, height=842)
+        p_f22.insert_text((200.0, 50.0), "Hero MotoCorp Ltd.", fontsize=14.0)
+        p_f22.insert_text((230.0, 150.0), "FORM 22", fontsize=14.0)
+        p_f22.insert_text((180.0, 170.0), "ROAD-WORTHINESS CERTIFICATE", fontsize=11.0)
+        p_f22.insert_text((420.0, 700.0), "For Hero MotoCorp Ltd.", fontsize=10.0)
+        p_f22.insert_text((420.0, 750.0), "Head - National Sales (Authorized Signatory)", fontsize=9.0)
+        doc_f22.save(mock_f22)
+        doc_f22.close()
+
+        out_f22 = os.path.join(tmpdir, "mock_f22_out.pdf")
+        stats_f22 = converter.convert_document(mock_f22, out_f22, affix_stamp=True)
+        assert stats_f22["status"] == "success"
+        assert stats_f22["doc_type"] == "form_22"
+        assert stats_f22["stamps_affixed"] == 1
+        # Form 22 must NOT change Hero MotoCorp or text
+        doc_f22_out = fitz.open(out_f22)
+        p_f22_out = doc_f22_out[0]
+        assert len(p_f22_out.search_for("Hero MotoCorp Ltd.")) >= 1
+        assert len(p_f22_out.search_for("FORM 22")) >= 1
+        doc_f22_out.close()
+        print("MOCK FORM 22 CI TEST PASSED!")
+
+        # Verify strict file size limit (< 280 KB) across all mock outputs
+        for path in [out_sc, out_inv, out_f22]:
+            sz = os.path.getsize(path) / 1024.0
+            assert sz < 280.0, f"File {path} is {sz:.1f} KB, exceeding strict 280 KB limit!"
+        print("STRICT < 280 KB SIZE VERIFICATION PASSED!")
+
 
 if __name__ == "__main__":
     test_mock_ci()

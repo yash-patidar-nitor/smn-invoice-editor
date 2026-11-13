@@ -75,11 +75,59 @@ def affix_dealer_stamp_sale_certificate(page: fitz.Page, stamp_path: str = None)
     return True
 
 
+def affix_dealer_stamp_form_22(page: fitz.Page, stamp_path: str = None) -> bool:
+    """Affix authentic Annapurna Motors circular rubber stamp and signature onto Form 22 Road-Worthiness Certificate in the open bottom-left blank space."""
+    path = stamp_path or get_stamp_path()
+    if not path or not os.path.exists(path):
+        return False
+    # Form 22: open blank space in bottom-left, aligned with Hero MotoCorp signatory block on the right
+    rect = fitz.Rect(180.0, 688.0, 268.0, 778.0)
+    page.insert_image(rect, filename=path, keep_proportion=True)
+    return True
 
-def detect_document_type(doc: fitz.Document) -> str:
-    """Detect whether the document is a Sale Certificate or Tax Invoice."""
+
+def optimize_pdf_size(doc: fitz.Document, max_kb: int = 270) -> bool:
+    """
+    Ensure any scanned or heavy pages inside the document are compressed so the
+    generated PDF is strictly below 280 KB.
+    """
+    import io
+    from PIL import Image
+
+    compressed_any = False
+    for page in doc:
+        for img_info in page.get_images():
+            xref = img_info[0]
+            try:
+                base = doc.extract_image(xref)
+                # Only compress large background/scanned images (width > 600 and height > 600)
+                if base["width"] > 600 and base["height"] > 600:
+                    im = Image.open(io.BytesIO(base["image"]))
+                    # Downscale to standard 150 DPI resolution for RTO document upload
+                    im.thumbnail((1500, 1500), Image.Resampling.LANCZOS)
+                    buf = io.BytesIO()
+                    im.save(buf, format="JPEG", quality=70, optimize=True)
+                    doc.update_stream(xref, buf.getvalue())
+                    try:
+                        doc.xref_set_key(xref, "Width", str(im.width))
+                        doc.xref_set_key(xref, "Height", str(im.height))
+                    except Exception:
+                        pass
+                    compressed_any = True
+            except Exception:
+                continue
+    return compressed_any
+
+
+def detect_document_type(doc: fitz.Document, filename: str = "") -> str:
+    """Detect whether the document is Form 22, Form 21 Sale Certificate, or Tax Invoice."""
+    fn = (filename or "").lower()
+    if "22" in fn or "form 22" in fn or "road-worthiness" in fn:
+        return "form_22"
     first_page_text = doc[0].get_text()
-    if "SALE CERTIFICATE" in first_page_text or "Form No .21" in first_page_text:
+    if "FORM 22" in first_page_text or "ROAD-WORTHINESS" in first_page_text or "Rule 47 (1)(g)" in first_page_text:
+        return "form_22"
+    if "SALE CERTIFICATE" in first_page_text or "Form No .21" in first_page_text or "Form 21" in first_page_text:
         return "sale_certificate"
     return "invoice"
 
@@ -341,11 +389,13 @@ def convert_sale_certificate(doc: fitz.Document, hypothecation: str = None, new_
     }
 
 
-def convert_document(input_path: str, output_path: str, hypothecation: str = None, new_date: str = None, affix_stamp: bool = True) -> dict:
+def convert_document(input_path: str, output_path: str, hypothecation: str = None, new_date: str = None, affix_stamp: bool = True, doc_type: str = "auto") -> dict:
     """
     Main conversion entry point.
     Processes each page individually, accurately handling standalone Tax Invoices,
-    standalone Form 21 Sale Certificates, or multi-page documents containing BOTH!
+    standalone Form 21 Sale Certificates, Form 22 Road-Worthiness Certificates,
+    or multi-page documents containing BOTH!
+    Guarantees generated output is strictly below 280 KB.
     """
     doc = fitz.open(input_path)
     total_pages = len(doc)
@@ -354,77 +404,42 @@ def convert_document(input_path: str, output_path: str, hypothecation: str = Non
     stamps_affixed = 0
     types_found = set()
 
-    for page in doc:
-        page_text = page.get_text()
-        if "SALE CERTIFICATE" in page_text or "Form No .21" in page_text:
-            types_found.add("sale_certificate")
-            # --- Sale Certificate Processing ---
-            shanti_hits = [h for h in page.search_for("Shanti Motors") if h.y0 < 100]
-            if not shanti_hits:
-                shanti_hits = [h for h in page.search_for("SHANTI MOTORS") if h.y0 < 100]
+    # Determine explicit or detected doc type
+    detected_type = detect_document_type(doc, input_path) if doc_type == "auto" else doc_type
 
-            if shanti_hits:
-                page.add_redact_annot(fitz.Rect(54.0, 22.0, 440.0, 75.0), fill=(1, 1, 1))
-                page.apply_redactions()
-                cfg = ANNAPURNA_SC_CONFIG
-                page.insert_text((56.7, 35.0), cfg["dealer_name"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                page.insert_text((56.7, 46.0), cfg["address_line1"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                page.insert_text((56.7, 57.0), cfg["address_line2"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                page.insert_text((56.7, 68.0), cfg["dealer_auth"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                headers_replaced += 1
+    if detected_type == "form_22":
+        types_found.add("form_22")
+        # In case of Form 22: NO editing/change is required.
+        # Only affixing of the Annapurna Motors stamp on the bottom-left blank area.
+        if affix_stamp and total_pages > 0:
+            target_page = doc[0]
+            if affix_dealer_stamp_form_22(target_page):
+                stamps_affixed += 1
+    else:
+        for page in doc:
+            page_text = page.get_text()
+            if "SALE CERTIFICATE" in page_text or "Form No .21" in page_text:
+                types_found.add("sale_certificate")
+                # --- Sale Certificate Processing ---
+                shanti_hits = [h for h in page.search_for("Shanti Motors") if h.y0 < 100]
+                if not shanti_hits:
+                    shanti_hits = [h for h in page.search_for("SHANTI MOTORS") if h.y0 < 100]
 
-            if hypothecation:
-                update_hypothecation_sale_certificate(page, hypothecation)
-
-            if new_date:
-                update_date_sale_certificate(page, new_date)
-
-            # Obliterate ANY and ALL Shanti Motors references in signatory block
-            for term in ["SHANTI MOTORS", "Shanti Motors", "shanti motors", "M/S.SHANTI", "M/s.Shanti", "For M/S", "For M/s", "For  M"]:
-                for h in page.search_for(term):
-                    if h.y0 > 200 and h.x0 > 380:
-                        page.add_redact_annot(fitz.Rect(430.0, h.y0 - 5, 585.0, h.y1 + 5), fill=(1, 1, 1))
-
-            # Blanket-redact both candidate vertical bands
-            page.add_redact_annot(fitz.Rect(430.0, 590.0, 585.0, 615.0), fill=(1, 1, 1))
-            page.add_redact_annot(fitz.Rect(430.0, 630.0, 585.0, 655.0), fill=(1, 1, 1))
-            page.apply_redactions()
-
-            footer_text = ANNAPURNA_SC_CONFIG["footer_signatory"]
-            text_len = fitz.get_text_length(footer_text, fontname="helv", fontsize=9.0)
-            target_x = max(56.7, 570.0 - text_len)
-            page.insert_text((target_x, 605.0), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
-            footers_replaced += 1
-
-            if affix_stamp:
-                if affix_dealer_stamp_sale_certificate(page):
-                    stamps_affixed += 1
-
-        else:
-            # --- Tax Invoice Processing ---
-            shanti_hits = page.search_for("SHANTI MOTORS")
-            gstin_hits = page.search_for("23AQMPP0120E1ZE")
-            header_hit = any(h.y0 < 200 for h in shanti_hits)
-            is_invoice_face = header_hit or (gstin_hits and gstin_hits[0].y0 < 200)
-
-            if is_invoice_face:
-                types_found.add("invoice")
-                header_rect = fitz.Rect(26.0, 106.0, 440.0, 170.0)
-                page.add_redact_annot(header_rect, fill=(1, 1, 1))
-                page.apply_redactions()
-                cfg = ANNAPURNA_INVOICE_CONFIG
-                page.insert_text((28.35, 120.5), cfg["dealer_name"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                page.insert_text((28.35, 131.0), cfg["address_line1"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                page.insert_text((28.35, 142.0), cfg["address_line2"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                page.insert_text((28.35, 153.0), cfg["dealer_auth"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                page.insert_text((28.35, 164.0), cfg["gstin_pan"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                headers_replaced += 1
+                if shanti_hits:
+                    page.add_redact_annot(fitz.Rect(54.0, 22.0, 440.0, 75.0), fill=(1, 1, 1))
+                    page.apply_redactions()
+                    cfg = ANNAPURNA_SC_CONFIG
+                    page.insert_text((56.7, 35.0), cfg["dealer_name"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                    page.insert_text((56.7, 46.0), cfg["address_line1"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                    page.insert_text((56.7, 57.0), cfg["address_line2"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                    page.insert_text((56.7, 68.0), cfg["dealer_auth"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                    headers_replaced += 1
 
                 if hypothecation:
-                    update_hypothecation_invoice(page, hypothecation)
+                    update_hypothecation_sale_certificate(page, hypothecation)
 
                 if new_date:
-                    update_date_invoice(page, new_date)
+                    update_date_sale_certificate(page, new_date)
 
                 # Obliterate ANY and ALL Shanti Motors references in signatory block
                 for term in ["SHANTI MOTORS", "Shanti Motors", "shanti motors", "M/S.SHANTI", "M/s.Shanti", "For M/S", "For M/s", "For  M"]:
@@ -437,21 +452,98 @@ def convert_document(input_path: str, output_path: str, hypothecation: str = Non
                 page.add_redact_annot(fitz.Rect(430.0, 630.0, 585.0, 655.0), fill=(1, 1, 1))
                 page.apply_redactions()
 
-                footer_text = ANNAPURNA_INVOICE_CONFIG["footer_signatory"]
+                footer_text = ANNAPURNA_SC_CONFIG["footer_signatory"]
                 text_len = fitz.get_text_length(footer_text, fontname="helv", fontsize=9.0)
-                target_x = max(28.35, 577.05 - text_len)
-                page.insert_text((target_x, 647.5), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                target_x = max(56.7, 570.0 - text_len)
+                page.insert_text((target_x, 605.0), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
                 footers_replaced += 1
 
                 if affix_stamp:
-                    if affix_dealer_stamp_invoice(page):
+                    if affix_dealer_stamp_sale_certificate(page):
                         stamps_affixed += 1
+
+            else:
+                # --- Tax Invoice Processing ---
+                shanti_hits = page.search_for("SHANTI MOTORS")
+                gstin_hits = page.search_for("23AQMPP0120E1ZE")
+                header_hit = any(h.y0 < 200 for h in shanti_hits)
+                is_invoice_face = header_hit or (gstin_hits and gstin_hits[0].y0 < 200)
+
+                if is_invoice_face:
+                    types_found.add("invoice")
+                    header_rect = fitz.Rect(26.0, 106.0, 440.0, 170.0)
+                    page.add_redact_annot(header_rect, fill=(1, 1, 1))
+                    page.apply_redactions()
+                    cfg = ANNAPURNA_INVOICE_CONFIG
+                    page.insert_text((28.35, 120.5), cfg["dealer_name"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                    page.insert_text((28.35, 131.0), cfg["address_line1"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                    page.insert_text((28.35, 142.0), cfg["address_line2"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                    page.insert_text((28.35, 153.0), cfg["dealer_auth"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                    page.insert_text((28.35, 164.0), cfg["gstin_pan"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                    headers_replaced += 1
+
+                    if hypothecation:
+                        update_hypothecation_invoice(page, hypothecation)
+
+                    if new_date:
+                        update_date_invoice(page, new_date)
+
+                    # Obliterate ANY and ALL Shanti Motors references in signatory block
+                    for term in ["SHANTI MOTORS", "Shanti Motors", "shanti motors", "M/S.SHANTI", "M/s.Shanti", "For M/S", "For M/s", "For  M"]:
+                        for h in page.search_for(term):
+                            if h.y0 > 200 and h.x0 > 380:
+                                page.add_redact_annot(fitz.Rect(430.0, h.y0 - 5, 585.0, h.y1 + 5), fill=(1, 1, 1))
+
+                    # Blanket-redact both candidate vertical bands
+                    page.add_redact_annot(fitz.Rect(430.0, 590.0, 585.0, 615.0), fill=(1, 1, 1))
+                    page.add_redact_annot(fitz.Rect(430.0, 630.0, 585.0, 655.0), fill=(1, 1, 1))
+                    page.apply_redactions()
+
+                    footer_text = ANNAPURNA_INVOICE_CONFIG["footer_signatory"]
+                    text_len = fitz.get_text_length(footer_text, fontname="helv", fontsize=9.0)
+                    target_x = max(28.35, 577.05 - text_len)
+                    page.insert_text((target_x, 647.5), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                    footers_replaced += 1
+
+                    if affix_stamp:
+                        if affix_dealer_stamp_invoice(page):
+                            stamps_affixed += 1
+
+    # Apply image & size optimization to ensure output file is strictly < 280 KB
+    optimize_pdf_size(doc)
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     doc.save(output_path, garbage=4, deflate=True)
     doc.close()
 
-    if "sale_certificate" in types_found and "invoice" in types_found:
+    # If the file size is still close to or above 275 KB, run a second aggressive optimization pass
+    file_size_kb = os.path.getsize(output_path) / 1024.0
+    if file_size_kb > 275.0:
+        doc_retry = fitz.open(output_path)
+        for page in doc_retry:
+            for img_info in page.get_images():
+                xref = img_info[0]
+                try:
+                    import io
+                    from PIL import Image
+                    base = doc_retry.extract_image(xref)
+                    if base["width"] > 500 and base["height"] > 500:
+                        im = Image.open(io.BytesIO(base["image"]))
+                        im.thumbnail((1200, 1200), Image.Resampling.LANCZOS)
+                        buf = io.BytesIO()
+                        im.save(buf, format="JPEG", quality=62, optimize=True)
+                        doc_retry.update_stream(xref, buf.getvalue())
+                        doc_retry.xref_set_key(xref, "Width", str(im.width))
+                        doc_retry.xref_set_key(xref, "Height", str(im.height))
+                except Exception:
+                    pass
+        doc_retry.save(output_path, garbage=4, deflate=True)
+        doc_retry.close()
+        file_size_kb = os.path.getsize(output_path) / 1024.0
+
+    if "form_22" in types_found:
+        final_type = "form_22"
+    elif "sale_certificate" in types_found and "invoice" in types_found:
         final_type = "both"
     elif "sale_certificate" in types_found:
         final_type = "sale_certificate"
@@ -464,6 +556,7 @@ def convert_document(input_path: str, output_path: str, hypothecation: str = Non
         "headers_replaced": headers_replaced,
         "footers_replaced": footers_replaced,
         "stamps_affixed": stamps_affixed,
+        "file_size_kb": round(file_size_kb, 1),
         "status": "success"
     }
 

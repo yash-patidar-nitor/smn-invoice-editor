@@ -102,7 +102,8 @@ HTML_TEMPLATE = """
         .result-type-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; margin-right: 6px; }
         .tag-inv { background: #e0e7ff; color: #4338ca; }
         .tag-sc { background: #fef3c7; color: #b45309; }
-        .tag-both { background: #dcfce7; color: #15803d; }
+        .tag-both { background: #e0f2fe; color: #0369a1; }
+        .tag-f22 { background: #dcfce7; color: #15803d; }
         .result-actions { display: flex; gap: 8px; }
         .btn-link { font-size: 12px; font-weight: 600; text-decoration: none; padding: 6px 12px; border-radius: 4px; border: none; cursor: pointer; }
         .btn-preview { background: #eff6ff; color: var(--primary); }
@@ -127,8 +128,9 @@ HTML_TEMPLATE = """
         <!-- Mode Selector Tabs -->
         <div class="tabs">
             <button class="tab-btn active" id="tab-invoice" onclick="switchMode('invoice')">🧾 Tax Invoice</button>
-            <button class="tab-btn" id="tab-sc" onclick="switchMode('sale-cert')">📜 Sale Certificate</button>
-            <button class="tab-btn" id="tab-batch" onclick="switchMode('batch')">⚡ Batch (Both)</button>
+            <button class="tab-btn" id="tab-sc" onclick="switchMode('sale-cert')">📜 Sale Certificate (Form 21)</button>
+            <button class="tab-btn" id="tab-f22" onclick="switchMode('form-22')">📋 Form 22</button>
+            <button class="tab-btn" id="tab-batch" onclick="switchMode('batch')">⚡ Batch (All)</button>
         </div>
 
         <div class="card">
@@ -222,13 +224,17 @@ HTML_TEMPLATE = """
         function switchMode(mode) {
             currentMode = mode;
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            document.getElementById(mode === 'invoice' ? 'tab-invoice' : (mode === 'sale-cert' ? 'tab-sc' : 'tab-batch')).classList.add('active');
+            const tabId = mode === 'invoice' ? 'tab-invoice' : (mode === 'sale-cert' ? 'tab-sc' : (mode === 'form-22' ? 'tab-f22' : 'tab-batch'));
+            const tabEl = document.getElementById(tabId);
+            if (tabEl) tabEl.classList.add('active');
 
             const uploadTitle = document.getElementById('upload-card-title');
             const dropIcon = document.getElementById('drop-zone-icon');
             const dropTitle = document.getElementById('drop-zone-title');
             const dropDesc = document.getElementById('drop-zone-desc');
             const browseText = document.getElementById('btn-browse-text');
+            const hypoGroup = document.getElementById('hypo-select') ? document.getElementById('hypo-select').closest('.form-group') : null;
+            const dateGroup = document.getElementById('date-input') ? document.getElementById('date-input').closest('.form-group') : null;
 
             if (mode === 'invoice') {
                 uploadTitle.innerText = '2. Upload Tax Invoice(s)';
@@ -236,18 +242,32 @@ HTML_TEMPLATE = """
                 dropTitle.innerText = 'Click anywhere to select or drag & drop Tax Invoices';
                 dropDesc.innerText = 'Original template is 100% preserved with zero font truncation.';
                 browseText.innerText = '📁 Browse & Select Invoices';
+                if (hypoGroup) hypoGroup.style.opacity = '1';
+                if (dateGroup) dateGroup.style.opacity = '1';
             } else if (mode === 'sale-cert') {
                 uploadTitle.innerText = '2. Upload Sale Certificate(s) - Form 21';
                 dropIcon.innerText = '📜';
                 dropTitle.innerText = 'Click anywhere to select or drag & drop Sale Certificates';
                 dropDesc.innerText = 'Updates top date, delivery clause date, header, and signatory cleanly.';
                 browseText.innerText = '📁 Browse & Select Sale Certificates';
+                if (hypoGroup) hypoGroup.style.opacity = '1';
+                if (dateGroup) dateGroup.style.opacity = '1';
+            } else if (mode === 'form-22') {
+                uploadTitle.innerText = '2. Upload Form 22 Certificate(s)';
+                dropIcon.innerText = '📋';
+                dropTitle.innerText = 'Click anywhere to select or drag & drop Form 22';
+                dropDesc.innerText = 'No editing needed. Affixes dealer stamp & signature in bottom-left blank space.';
+                browseText.innerText = '📁 Browse & Select Form 22';
+                if (hypoGroup) hypoGroup.style.opacity = '0.45';
+                if (dateGroup) dateGroup.style.opacity = '0.45';
             } else {
-                uploadTitle.innerText = '2. Upload Invoices & Sale Certificates (Batch)';
-                dropIcon.innerText = '📄';
+                uploadTitle.innerText = '2. Upload Documents (Batch)';
+                dropIcon.innerText = '⚡';
                 dropTitle.innerText = 'Click anywhere to select or drag & drop files';
-                dropDesc.innerText = 'Convert Tax Invoices and Form 21 Sale Certificates together in one batch!';
+                dropDesc.innerText = 'Simultaneously convert Invoices, Form 21 Sale Certificates & Form 22 in one batch!';
                 browseText.innerText = '📁 Browse & Select Files';
+                if (hypoGroup) hypoGroup.style.opacity = '1';
+                if (dateGroup) dateGroup.style.opacity = '1';
             }
 
             clearAllFiles();
@@ -299,7 +319,10 @@ HTML_TEMPLATE = """
 
         function getFileBadge(name) {
             const lower = name.toLowerCase();
-            if (lower.includes('sale') || lower.includes('cert')) {
+            if (lower.includes('22') || lower.includes('road')) {
+                return '<span class="result-type-tag tag-f22">Form 22</span>';
+            }
+            if (lower.includes('sale') || lower.includes('cert') || lower.includes('21')) {
                 return '<span class="result-type-tag tag-sc">Sale Certificate</span>';
             }
             return '<span class="result-type-tag tag-inv">Tax Invoice</span>';
@@ -399,16 +422,19 @@ HTML_TEMPLATE = """
                 let typeTag = '<span class="result-type-tag tag-inv">Tax Invoice</span>';
                 if (f.doc_type === 'sale_certificate') {
                     typeTag = '<span class="result-type-tag tag-sc">Sale Certificate</span>';
+                } else if (f.doc_type === 'form_22') {
+                    typeTag = '<span class="result-type-tag tag-f22">Form 22</span>';
                 } else if (f.doc_type === 'both') {
                     typeTag = '<span class="result-type-tag tag-both">Invoice + Certificate</span>';
                 }
+                const sizeBadge = f.file_size_kb ? `<span style="font-size:11px; background:#f1f5f9; color:#475569; padding:2px 6px; border-radius:4px; margin-left:6px; font-weight:600;">${f.file_size_kb} KB</span>` : '';
 
                 return `
                 <div class="result-item">
                     <div>
-                        <div>${typeTag}<strong>${f.converted_name}</strong></div>
+                        <div>${typeTag}<strong>${f.converted_name}</strong>${sizeBadge}</div>
                         <div style="font-size: 11px; color: var(--text-muted); margin-top: 3px;">
-                            Headers replaced: ${f.headers_replaced} | Signatory replaced: ${f.footers_replaced}
+                            ${f.doc_type === 'form_22' ? 'Dealer stamp affixed in blank area (strictly < 280 KB)' : `Headers replaced: ${f.headers_replaced} | Signatory replaced: ${f.footers_replaced}`}
                         </div>
                     </div>
                     <div class="result-actions">
@@ -472,28 +498,28 @@ def api_convert():
         out_path = os.path.join(temp_dir, f"out_{converted_name}")
 
         try:
-            if doc_mode == 'invoice':
-                doc = fitz.open(in_path)
-                stats = converter.convert_invoice(doc, hypothecation=hypothecation, new_date=new_date, affix_stamp=affix_stamp)
-                doc.save(out_path)
-                doc.close()
-            elif doc_mode == 'sale-cert':
-                doc = fitz.open(in_path)
-                stats = converter.convert_sale_certificate(doc, hypothecation=hypothecation, new_date=new_date, affix_stamp=affix_stamp)
-                doc.save(out_path)
-                doc.close()
-            else:
-                stats = converter.convert_document(
-                    in_path,
-                    out_path,
-                    hypothecation=hypothecation,
-                    new_date=new_date,
-                    affix_stamp=affix_stamp
-                )
+            mode_map = {
+                'invoice': 'invoice',
+                'sale-cert': 'sale_certificate',
+                'form-22': 'form_22',
+                'batch': None
+            }
+            target_doc_type = mode_map.get(doc_mode, None)
+
+            stats = converter.convert_document(
+                in_path,
+                out_path,
+                doc_type=target_doc_type,
+                hypothecation=hypothecation,
+                new_date=new_date,
+                affix_stamp=affix_stamp
+            )
 
             file_id = str(uuid.uuid4())
             with open(out_path, 'rb') as out_f:
                 pdf_bytes = out_f.read()
+
+            file_size_kb = stats.get('file_size_kb', round(len(pdf_bytes) / 1024.0, 1))
 
             CONVERTED_STORE[file_id] = {
                 'filename': converted_name,
@@ -507,7 +533,8 @@ def api_convert():
                 'converted_name': converted_name,
                 'doc_type': stats.get('doc_type', 'invoice'),
                 'headers_replaced': stats.get('headers_replaced', 0),
-                'footers_replaced': stats.get('footers_replaced', 0)
+                'footers_replaced': stats.get('footers_replaced', 0),
+                'file_size_kb': file_size_kb
             })
         except Exception as e:
             return jsonify({'error': str(e)}), 500
