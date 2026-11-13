@@ -144,6 +144,17 @@
                     Automates Step 3: Overlays authentic Annapurna Motors circular rubber stamp and signature onto the signatory block.
                 </span>
             </div>
+            <div style="margin-top: 10px;">
+                <label style="display: flex; align-items: center; gap: 10px; background: #fefce8; border: 1px solid #fef08a; padding: 12px 16px; border-radius: 8px; cursor: pointer; user-select: none;">
+                    <input type="checkbox" id="scanned-look-checkbox" checked style="width: 18px; height: 18px; accent-color: #ca8a04; cursor: pointer;">
+                    <span style="font-size: 13.5px; font-weight: 600; color: #854d0e;">
+                        📄 Realistic Scanned Look (Scan & Print Imperfections, Dull Colors, Anti-Digital Look)
+                    </span>
+                </label>
+                <span class="form-hint" style="margin-top: 6px; display: block; margin-left: 4px;">
+                    Dulls bright digital colors, lifts ink black levels, adds authentic scanner tilt & subtle paper grain so documents look genuinely scanned for RTO portals. Strictly under 280 KB.
+                </span>
+            </div>
         </div>
 
         <div class="card">
@@ -330,6 +341,122 @@
             `;
         }
 
+        async function applyScannedLook(pdfBytes) {
+            if (typeof pdfjsLib === 'undefined') {
+                return await ensureStrictlyUnder280KB(pdfBytes);
+            }
+            try {
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                const loadingTask = pdfjsLib.getDocument({ data: pdfBytes });
+                const pdf = await loadingTask.promise;
+                const newDoc = await PDFLib.PDFDocument.create();
+
+                const angles = [0.34, -0.28, 0.30, -0.25];
+                const targetQuality = pdf.numPages === 1 ? 0.68 : 0.60;
+
+                for (let p = 1; p <= pdf.numPages; p++) {
+                    const page = await pdf.getPage(p);
+                    const origViewport = page.getViewport({ scale: 1.0 });
+                    // 150 DPI scale: 150 / 72 ≈ 2.0833
+                    const scale = 2.0833;
+                    const viewport = page.getViewport({ scale: scale });
+
+                    // 1. Render original page to canvas
+                    const srcCanvas = document.createElement('canvas');
+                    srcCanvas.width = viewport.width;
+                    srcCanvas.height = viewport.height;
+                    const srcCtx = srcCanvas.getContext('2d');
+                    await page.render({ canvasContext: srcCtx, viewport: viewport }).promise;
+
+                    // 2. Create destination canvas for scanned processing
+                    const destCanvas = document.createElement('canvas');
+                    destCanvas.width = viewport.width;
+                    destCanvas.height = viewport.height;
+                    const destCtx = destCanvas.getContext('2d');
+
+                    // Fill with authentic warm off-white paper color
+                    destCtx.fillStyle = '#faf9f7';
+                    destCtx.fillRect(0, 0, destCanvas.width, destCanvas.height);
+
+                    // Apply realistic scanner rotation and color grading
+                    const angleDeg = angles[(p - 1) % angles.length];
+                    const angleRad = angleDeg * Math.PI / 180;
+
+                    destCtx.save();
+                    destCtx.translate(destCanvas.width / 2, destCanvas.height / 2);
+                    destCtx.rotate(angleRad);
+                    // Dulls bright digital colors (saturate 0.76), lifts blacks & softens contrast (contrast 0.93, brightness 0.98)
+                    destCtx.filter = 'saturate(0.76) contrast(0.93) brightness(0.98)';
+                    destCtx.drawImage(srcCanvas, -srcCanvas.width / 2, -srcCanvas.height / 2);
+                    destCtx.restore();
+
+                    // 3. Add subtle paper grain & scanner sensor noise
+                    try {
+                        const imgData = destCtx.getImageData(0, 0, destCanvas.width, destCanvas.height);
+                        const d = imgData.data;
+                        const len = d.length;
+                        for (let i = 0; i < len; i += 4) {
+                            const n = (Math.random() - 0.5) * 8.0;
+                            d[i] = Math.min(255, Math.max(0, d[i] + n));
+                            d[i + 1] = Math.min(255, Math.max(0, d[i + 1] + n));
+                            d[i + 2] = Math.min(255, Math.max(0, d[i + 2] + n));
+                        }
+                        destCtx.putImageData(imgData, 0, 0);
+                    } catch (e) {
+                        console.warn('Paper noise skipped:', e);
+                    }
+
+                    // 4. Encode as JPEG
+                    const jpegDataUrl = destCanvas.toDataURL('image/jpeg', targetQuality);
+                    const jpegImg = await newDoc.embedJpg(jpegDataUrl);
+                    const newPage = newDoc.addPage([origViewport.width, origViewport.height]);
+                    newPage.drawImage(jpegImg, {
+                        x: 0,
+                        y: 0,
+                        width: origViewport.width,
+                        height: origViewport.height
+                    });
+                }
+
+                let resultBytes = await newDoc.save();
+
+                // If output still > 275 KB, run a second compression pass at lower quality
+                if (resultBytes.byteLength > 275 * 1024) {
+                    const retryDoc = await PDFLib.PDFDocument.create();
+                    for (let p = 1; p <= pdf.numPages; p++) {
+                        const page = await pdf.getPage(p);
+                        const origViewport = page.getViewport({ scale: 1.0 });
+                        const viewport = page.getViewport({ scale: 1.75 });
+
+                        const c = document.createElement('canvas');
+                        c.width = viewport.width;
+                        c.height = viewport.height;
+                        const ctx = c.getContext('2d');
+                        ctx.fillStyle = '#faf9f7';
+                        ctx.fillRect(0, 0, c.width, c.height);
+                        ctx.filter = 'saturate(0.76) contrast(0.93) brightness(0.98)';
+                        await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+
+                        const jpegDataUrl = c.toDataURL('image/jpeg', 0.54);
+                        const jpegImg = await retryDoc.embedJpg(jpegDataUrl);
+                        const newPage = retryDoc.addPage([origViewport.width, origViewport.height]);
+                        newPage.drawImage(jpegImg, {
+                            x: 0,
+                            y: 0,
+                            width: origViewport.width,
+                            height: origViewport.height
+                        });
+                    }
+                    resultBytes = await retryDoc.save();
+                }
+
+                return resultBytes;
+            } catch (err) {
+                console.error('applyScannedLook error:', err);
+                return await ensureStrictlyUnder280KB(pdfBytes);
+            }
+        }
+
         async function ensureStrictlyUnder280KB(pdfBytes) {
             if (pdfBytes.byteLength <= 270 * 1024) {
                 return pdfBytes;
@@ -404,6 +531,7 @@
             const hypo = document.getElementById('hypo-select').value;
             const dateVal = document.getElementById('date-input').value.trim();
             const affixStamp = document.getElementById('stamp-checkbox') ? document.getElementById('stamp-checkbox').checked : true;
+            const scannedLook = document.getElementById('scanned-look-checkbox') ? document.getElementById('scanned-look-checkbox').checked : true;
 
             btn.disabled = true;
             progressBox.style.display = 'block';
@@ -422,20 +550,20 @@
                     let result;
 
                     if (currentMode === 'invoice') {
-                        result = await convertInvoicePdf(arrayBuffer, file.name, hypo, dateVal, affixStamp);
+                        result = await convertInvoicePdf(arrayBuffer, file.name, hypo, dateVal, affixStamp, scannedLook);
                     } else if (currentMode === 'sale-cert') {
-                        result = await convertSaleCertificatePdf(arrayBuffer, file.name, hypo, dateVal, affixStamp);
+                        result = await convertSaleCertificatePdf(arrayBuffer, file.name, hypo, dateVal, affixStamp, scannedLook);
                     } else if (currentMode === 'form-22') {
-                        result = await convertForm22Pdf(arrayBuffer, file.name, affixStamp);
+                        result = await convertForm22Pdf(arrayBuffer, file.name, affixStamp, scannedLook);
                     } else {
                         // Batch auto-detect
                         const detected = detectDocType(arrayBuffer, file.name);
                         if (detected === 'form_22') {
-                            result = await convertForm22Pdf(arrayBuffer, file.name, affixStamp);
+                            result = await convertForm22Pdf(arrayBuffer, file.name, affixStamp, scannedLook);
                         } else if (detected === 'sale_certificate') {
-                            result = await convertSaleCertificatePdf(arrayBuffer, file.name, hypo, dateVal, affixStamp);
+                            result = await convertSaleCertificatePdf(arrayBuffer, file.name, hypo, dateVal, affixStamp, scannedLook);
                         } else {
-                            result = await convertInvoicePdf(arrayBuffer, file.name, hypo, dateVal, affixStamp);
+                            result = await convertInvoicePdf(arrayBuffer, file.name, hypo, dateVal, affixStamp, scannedLook);
                         }
                     }
 
@@ -450,6 +578,7 @@
                         convertedName: convertedName,
                         docType: result.docType,
                         sizeKb: result.sizeKb,
+                        scannedLook: scannedLook,
                         blob: result.blob,
                         url: url
                     });
@@ -470,7 +599,7 @@
          * Strictly isolates all replacements to Page 0.
          * Exact non-truncating bounding boxes so Invoice # and Mobile # are 100% pristine.
          */
-        async function convertInvoicePdf(arrayBuffer, fileName, hypo, newDate, affixStamp = true) {
+        async function convertInvoicePdf(arrayBuffer, fileName, hypo, newDate, affixStamp = true, scannedLook = true) {
             const pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer);
             const helv = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
             const helvBold = await pdfDoc.embedFont(PDFLib.StandardFonts.HelveticaBold);
@@ -590,7 +719,11 @@
             }
 
             let modifiedPdfBytes = await pdfDoc.save();
-            modifiedPdfBytes = await ensureStrictlyUnder280KB(modifiedPdfBytes);
+            if (scannedLook) {
+                modifiedPdfBytes = await applyScannedLook(modifiedPdfBytes);
+            } else {
+                modifiedPdfBytes = await ensureStrictlyUnder280KB(modifiedPdfBytes);
+            }
             return {
                 blob: new Blob([modifiedPdfBytes], { type: 'application/pdf' }),
                 sizeKb: (modifiedPdfBytes.byteLength / 1024).toFixed(1),
@@ -602,7 +735,7 @@
          * Dedicated Sale Certificate (Form 21) Converter
          * Precise non-truncating bounding boxes for Sale Certificate.
          */
-        async function convertSaleCertificatePdf(arrayBuffer, fileName, hypo, newDate, affixStamp = true) {
+        async function convertSaleCertificatePdf(arrayBuffer, fileName, hypo, newDate, affixStamp = true, scannedLook = true) {
             const pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer);
             const helv = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
             const helvBold = await pdfDoc.embedFont(PDFLib.StandardFonts.HelveticaBold);
@@ -702,7 +835,11 @@
             }
 
             let modifiedPdfBytes = await pdfDoc.save();
-            modifiedPdfBytes = await ensureStrictlyUnder280KB(modifiedPdfBytes);
+            if (scannedLook) {
+                modifiedPdfBytes = await applyScannedLook(modifiedPdfBytes);
+            } else {
+                modifiedPdfBytes = await ensureStrictlyUnder280KB(modifiedPdfBytes);
+            }
             return {
                 blob: new Blob([modifiedPdfBytes], { type: 'application/pdf' }),
                 sizeKb: (modifiedPdfBytes.byteLength / 1024).toFixed(1),
@@ -715,7 +852,7 @@
          * Strictly affixes Annapurna Motors dealer seal & signature on bottom-left blank space.
          * Zero text changes. Output is strictly below 280 KB.
          */
-        async function convertForm22Pdf(arrayBuffer, fileName, affixStamp = true) {
+        async function convertForm22Pdf(arrayBuffer, fileName, affixStamp = true, scannedLook = true) {
             const pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer);
             const pages = pdfDoc.getPages();
 
@@ -740,7 +877,11 @@
             }
 
             let modifiedPdfBytes = await pdfDoc.save();
-            modifiedPdfBytes = await ensureStrictlyUnder280KB(modifiedPdfBytes);
+            if (scannedLook) {
+                modifiedPdfBytes = await applyScannedLook(modifiedPdfBytes);
+            } else {
+                modifiedPdfBytes = await ensureStrictlyUnder280KB(modifiedPdfBytes);
+            }
             return {
                 blob: new Blob([modifiedPdfBytes], { type: 'application/pdf' }),
                 sizeKb: (modifiedPdfBytes.byteLength / 1024).toFixed(1),
@@ -766,13 +907,14 @@
                     typeTag = '<span class="result-type-tag tag-f22">Form 22</span>';
                 }
                 const sizeBadge = r.sizeKb ? `<span style="font-size:11px; background:#f1f5f9; color:#475569; padding:2px 6px; border-radius:4px; margin-left:6px; font-weight:600;">${r.sizeKb} KB</span>` : '';
+                const scanBadge = r.scannedLook ? `<span style="font-size:11px; background:#fef3c7; color:#854d0e; padding:2px 6px; border-radius:4px; margin-left:6px; font-weight:600;">📄 Scanned Look</span>` : '';
 
                 return `
                     <div class="result-item">
                         <div>
                             ${typeTag}
                             <strong>${r.convertedName}</strong>
-                            ${sizeBadge}
+                            ${sizeBadge}${scanBadge}
                         </div>
                         <div class="result-actions">
                             <button class="btn-link btn-preview" onclick="openPreview(${i})">👁 Preview</button>
