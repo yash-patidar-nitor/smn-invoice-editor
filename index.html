@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>Hero Document Converter - Annapurna Motors</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
@@ -100,7 +103,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <span class="badge">Shanti Motors ➔ Annapurna Motors</span>
+            <span class="badge">Shanti Motors ➔ Annapurna Motors • v2.5 Single-Page Invoice</span>
             <h1 class="title">Hero Document Converter</h1>
             <p class="subtitle">Pixel-perfect conversion for Hero MotoCorp Invoices & Form 21 Sale Certificates</p>
         </div>
@@ -352,9 +355,9 @@
             `;
         }
 
-        async function applyScannedLook(pdfBytes, bwMode = true) {
+        async function applyScannedLook(pdfBytes, bwMode = true, maxPages = null) {
             if (typeof pdfjsLib === 'undefined') {
-                return await ensureStrictlyUnder280KB(pdfBytes);
+                return await ensureStrictlyUnder280KB(pdfBytes, maxPages);
             }
             try {
                 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -363,9 +366,10 @@
                 const newDoc = await PDFLib.PDFDocument.create();
 
                 const angles = [0.72, -0.65, 0.68, -0.58];
-                const targetQuality = pdf.numPages === 1 ? 0.64 : 0.56;
+                const targetQuality = (maxPages === 1 || pdf.numPages === 1) ? 0.64 : 0.56;
+                const numPagesToProcess = maxPages ? Math.min(pdf.numPages, maxPages) : pdf.numPages;
 
-                for (let p = 1; p <= pdf.numPages; p++) {
+                for (let p = 1; p <= numPagesToProcess; p++) {
                     const page = await pdf.getPage(p);
                     const origViewport = page.getViewport({ scale: 1.0 });
                     // 150 DPI scale: 150 / 72 ≈ 2.0833
@@ -460,7 +464,7 @@
                 // If output still > 275 KB, run a second compression pass at lower quality
                 if (resultBytes.byteLength > 275 * 1024) {
                     const retryDoc = await PDFLib.PDFDocument.create();
-                    for (let p = 1; p <= pdf.numPages; p++) {
+                    for (let p = 1; p <= numPagesToProcess; p++) {
                         const page = await pdf.getPage(p);
                         const origViewport = page.getViewport({ scale: 1.0 });
                         const viewport = page.getViewport({ scale: 1.75 });
@@ -496,8 +500,8 @@
             }
         }
 
-        async function ensureStrictlyUnder280KB(pdfBytes) {
-            if (pdfBytes.byteLength <= 270 * 1024) {
+        async function ensureStrictlyUnder280KB(pdfBytes, maxPages = null) {
+            if (!maxPages && pdfBytes.byteLength <= 270 * 1024) {
                 return pdfBytes;
             }
             try {
@@ -508,8 +512,9 @@
                 const loadingTask = pdfjsLib.getDocument({ data: pdfBytes });
                 const pdf = await loadingTask.promise;
                 const newDoc = await PDFLib.PDFDocument.create();
+                const numPagesToProcess = maxPages ? Math.min(pdf.numPages, maxPages) : pdf.numPages;
 
-                for (let p = 1; p <= pdf.numPages; p++) {
+                for (let p = 1; p <= numPagesToProcess; p++) {
                     const page = await pdf.getPage(p);
                     const origViewport = page.getViewport({ scale: 1.0 });
                     // 150 DPI scale: 150 / 72 ≈ 2.0833
@@ -540,10 +545,10 @@
 
         function detectDocType(arrayBuffer, fileName) {
             const fn = (fileName || '').toLowerCase();
-            if (fn.includes('22') || fn.includes('form 22') || fn.includes('road-worthiness')) {
+            if (fn.includes('form 22') || fn.includes('form-22') || fn.includes('road-worthiness') || fn === '22.pdf' || fn.startsWith('22_') || fn.startsWith('22-')) {
                 return 'form_22';
             }
-            if (fn.includes('sale') || fn.includes('cert') || fn.includes('form 21') || fn.includes('21')) {
+            if (fn.includes('sale') || fn.includes('certificate') || fn.includes('form 21') || fn.includes('form-21') || fn === '21.pdf' || fn.startsWith('21_') || fn.startsWith('21-')) {
                 return 'sale_certificate';
             }
             try {
@@ -761,15 +766,15 @@
 
             // User requirement: In the Invoice converter, ignore the 2nd page (Terms & Conditions)
             // In the final output, strictly only include the first page (Page 0).
-            while (pdfDoc.getPageCount() > 1) {
-                pdfDoc.removePage(1);
-            }
+            const singlePageDoc = await PDFLib.PDFDocument.create();
+            const [copiedPage0] = await singlePageDoc.copyPages(pdfDoc, [0]);
+            singlePageDoc.addPage(copiedPage0);
 
-            let modifiedPdfBytes = await pdfDoc.save();
+            let modifiedPdfBytes = await singlePageDoc.save();
             if (scannedLook) {
-                modifiedPdfBytes = await applyScannedLook(modifiedPdfBytes, bwMode);
+                modifiedPdfBytes = await applyScannedLook(modifiedPdfBytes, bwMode, 1);
             } else {
-                modifiedPdfBytes = await ensureStrictlyUnder280KB(modifiedPdfBytes);
+                modifiedPdfBytes = await ensureStrictlyUnder280KB(modifiedPdfBytes, 1);
             }
             return {
                 blob: new Blob([modifiedPdfBytes], { type: 'application/pdf' }),
