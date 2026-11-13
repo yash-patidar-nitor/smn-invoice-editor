@@ -399,8 +399,8 @@ def convert_sale_certificate(doc: fitz.Document, hypothecation: str = None, new_
 def apply_scanned_effect(doc: fitz.Document, bw_mode: bool = True, max_kb: int = 270) -> fitz.Document:
     """
     Renders PDF pages as realistic physically printed, stamped, and scanned pages:
+    - Simulates physical dealer workflow: B&W laser printout with authentic blue/purple seal & signature
     - Clean paper background without grain, salt-and-pepper noise, or faint dots
-    - Crisp monochromatic laser printer toner on smooth paper
     - Natural ADF paper feed skew (0.5° - 0.65°)
     - Re-encodes as JPEG quality tuned to keep total size strictly < 280 KB.
     """
@@ -414,15 +414,31 @@ def apply_scanned_effect(doc: fitz.Document, bw_mode: bool = True, max_kb: int =
         im = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
 
         if bw_mode:
-            # 1. Convert to Grayscale (B&W scanner & printer)
-            im_gray = im.convert("L")
-            arr = np.array(im_gray, dtype=np.float32)
+            # 1. B&W Printout + Authentic Blue Stamp & Signature color preservation
+            arr = np.array(im, dtype=np.float32)
+            r = arr[:, :, 0]
+            g = arr[:, :, 1]
+            b = arr[:, :, 2]
 
-            # 2. Scanner optical contrast: clean smooth paper background, crisp dark toner
-            arr = np.where(arr >= 210.0, np.clip(248.0 + (arr - 210.0) * 0.17, 0, 255), arr * 0.88)
-            arr = np.clip(arr, 0, 255).astype(np.uint8)
-            im_proc = Image.fromarray(arr, mode="L")
-            fill_val = 255
+            max_c = np.maximum(np.maximum(r, g), b)
+            min_c = np.minimum(np.minimum(r, g), b)
+            sat = max_c - min_c
+
+            # Rubber stamp & signature: blue/purple hue where b > r or b > g
+            is_blue_tint = (b > r + 3.0) | (b > g + 3.0)
+            color_weight = np.where(is_blue_tint, np.clip((sat - 8.0) / 16.0, 0.0, 1.0), 0.0)
+
+            # Grayscale toner for monochrome B&W laser print
+            gray = 0.299 * r + 0.587 * g + 0.114 * b
+            gray_toner = np.where(gray >= 210.0, np.clip(248.0 + (gray - 210.0) * 0.17, 0.0, 255.0), gray * 0.88)
+
+            out_arr = np.zeros_like(arr)
+            for c in range(3):
+                out_arr[:, :, c] = color_weight * arr[:, :, c] + (1.0 - color_weight) * gray_toner
+
+            out_arr = np.clip(out_arr, 0, 255).astype(np.uint8)
+            im_proc = Image.fromarray(out_arr, mode="RGB")
+            fill_val = (255, 255, 255)
         else:
             # Color scan with clean background
             arr = np.array(im, dtype=np.float32)
@@ -431,7 +447,7 @@ def apply_scanned_effect(doc: fitz.Document, bw_mode: bool = True, max_kb: int =
             im_proc = Image.fromarray(arr, mode="RGB")
             fill_val = (255, 255, 255)
 
-        # 3. Authentic ADF paper feed tilt
+        # 2. Authentic ADF paper feed tilt
         angle = angles[idx % len(angles)]
         im_rot = im_proc.rotate(angle, resample=Image.Resampling.BICUBIC, expand=False, fillcolor=fill_val)
 

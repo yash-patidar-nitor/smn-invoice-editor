@@ -103,7 +103,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <span class="badge">Shanti Motors ➔ Annapurna Motors • v2.6 Clean B&W Scanner</span>
+            <span class="badge">Shanti Motors ➔ Annapurna Motors • v2.7 B&W Print + Blue Seal</span>
             <h1 class="title">Hero Document Converter</h1>
             <p class="subtitle">Pixel-perfect conversion for Hero MotoCorp Invoices & Form 21 Sale Certificates</p>
         </div>
@@ -151,11 +151,11 @@
                 <label style="display: flex; align-items: center; gap: 10px; background: #fefce8; border: 1px solid #fef08a; padding: 12px 16px; border-radius: 8px; cursor: pointer; user-select: none;">
                     <input type="checkbox" id="scanned-look-checkbox" checked style="width: 18px; height: 18px; accent-color: #ca8a04; cursor: pointer;">
                     <span style="font-size: 13.5px; font-weight: 600; color: #854d0e;">
-                        📄 Realistic B&amp;W Scanned Look (Clean Office Scanner, Paper Feed Tilt, Anti-Digital)
+                        📄 Realistic Scanned Look (B&amp;W Printout + Authentic Blue Seal &amp; Signature Scan)
                     </span>
                 </label>
                 <span class="form-hint" style="margin-top: 6px; display: block; margin-left: 4px;">
-                    Simulates physical print &amp; B&amp;W scanner: authentic monochrome laser toner, clean paper background with zero grain/faint dots, subtle roller feed tilt, and genuine scanned appearance for RTO portals. Strictly under 280 KB.
+                    Accurately simulates dealership workflow: document body is in B&amp;W laser print, rubber seal &amp; signature retain authentic original blue ink stamped on top, and scanned via mobile/color scanner with natural tilt. Strictly under 280 KB.
                 </span>
             </div>
         </div>
@@ -401,20 +401,28 @@
                         const len = d.length;
 
                         for (let i = 0; i < len; i += 4) {
+                            const r = d[i], g = d[i + 1], b = d[i + 2];
                             if (bwMode) {
-                                // Grayscale luminance
-                                let gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-                                // Clean background vs authentic laser toner separation
-                                if (gray >= 210) {
-                                    // Smooth paper background: clean white, NO grain, NO faint dots
-                                    gray = Math.min(255, 248 + (gray - 210) * 0.17);
+                                // Check for colored ink (authentic blue/purple rubber stamp & pen signature)
+                                const maxC = Math.max(r, g, b);
+                                const minC = Math.min(r, g, b);
+                                const sat = maxC - minC;
+                                const isBlueTint = (b > r + 3) || (b > g + 3);
+                                const colorWeight = isBlueTint ? Math.min(1.0, Math.max(0.0, (sat - 8.0) / 16.0)) : 0.0;
+
+                                // Grayscale luminance for the B&W laser-printed document
+                                const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+                                const toner = lum >= 210 ? Math.min(255, 248 + (lum - 210) * 0.17) : Math.max(0, lum * 0.88);
+
+                                if (colorWeight > 0.0) {
+                                    d[i]     = Math.round(colorWeight * r + (1.0 - colorWeight) * toner);
+                                    d[i + 1] = Math.round(colorWeight * g + (1.0 - colorWeight) * toner);
+                                    d[i + 2] = Math.round(colorWeight * b + (1.0 - colorWeight) * toner);
                                 } else {
-                                    // Rich laser toner text and rubber stamp
-                                    gray = Math.max(0, gray * 0.88);
+                                    d[i]     = toner;
+                                    d[i + 1] = toner;
+                                    d[i + 2] = toner;
                                 }
-                                d[i] = gray;
-                                d[i + 1] = gray;
-                                d[i + 2] = gray;
                             } else {
                                 for (let c = 0; c < 3; c++) {
                                     let v = d[i + c];
@@ -459,10 +467,33 @@
                         const ctx = c.getContext('2d');
                         ctx.fillStyle = '#ffffff';
                         ctx.fillRect(0, 0, c.width, c.height);
-                        if (bwMode) {
-                            ctx.filter = 'grayscale(100%) contrast(1.1) brightness(0.98)';
-                        }
                         await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+
+                        if (bwMode) {
+                            try {
+                                const retryImgData = ctx.getImageData(0, 0, c.width, c.height);
+                                const rd = retryImgData.data;
+                                for (let i = 0; i < rd.length; i += 4) {
+                                    const r = rd[i], g = rd[i + 1], b = rd[i + 2];
+                                    const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
+                                    const sat = maxC - minC;
+                                    const isBlueTint = (b > r + 3) || (b > g + 3);
+                                    const colorWeight = isBlueTint ? Math.min(1.0, Math.max(0.0, (sat - 8.0) / 16.0)) : 0.0;
+                                    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+                                    const toner = lum >= 210 ? Math.min(255, 248 + (lum - 210) * 0.17) : Math.max(0, lum * 0.88);
+                                    if (colorWeight > 0.0) {
+                                        rd[i]     = Math.round(colorWeight * r + (1.0 - colorWeight) * toner);
+                                        rd[i + 1] = Math.round(colorWeight * g + (1.0 - colorWeight) * toner);
+                                        rd[i + 2] = Math.round(colorWeight * b + (1.0 - colorWeight) * toner);
+                                    } else {
+                                        rd[i]     = toner;
+                                        rd[i + 1] = toner;
+                                        rd[i + 2] = toner;
+                                    }
+                                }
+                                ctx.putImageData(retryImgData, 0, 0);
+                            } catch(e) {}
+                        }
 
                         const jpegDataUrl = c.toDataURL('image/jpeg', 0.50);
                         const jpegImg = await retryDoc.embedJpg(jpegDataUrl);
@@ -944,7 +975,7 @@
                 }
                 const sizeBadge = r.sizeKb ? `<span style="font-size:11px; background:#f1f5f9; color:#475569; padding:2px 6px; border-radius:4px; margin-left:6px; font-weight:600;">${r.sizeKb} KB</span>` : '';
                 const scanBadge = r.scannedLook 
-                    ? `<span style="font-size:11px; background:#f1f5f9; color:#1e293b; padding:2px 6px; border-radius:4px; margin-left:6px; font-weight:600;">🖨️ B&W Scan</span>` 
+                    ? `<span style="font-size:11px; background:#eff6ff; color:#1d4ed8; padding:2px 6px; border-radius:4px; margin-left:6px; font-weight:600;">🖨️ B&W Print + Blue Seal</span>` 
                     : '';
 
                 return `
