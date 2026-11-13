@@ -392,44 +392,62 @@ def convert_sale_certificate(doc: fitz.Document, hypothecation: str = None, new_
     }
 
 
-def apply_scanned_effect(doc: fitz.Document, max_kb: int = 270) -> fitz.Document:
+def apply_scanned_effect(doc: fitz.Document, bw_mode: bool = True, max_kb: int = 270) -> fitz.Document:
     """
     Renders PDF pages as realistic physically printed, stamped, and scanned pages:
-    - Subtle paper grain & scanner sensor noise
-    - Warm off-white paper background tone
-    - Lifted ink blacks (light reflection on physical toner/ink rather than pure #000000)
-    - Slightly dulled colors (desaturates bright digital stamp/lines by ~24%)
-    - Realistic ADF / flatbed scanner micro-deskew (subtle rotation between 0.25° and 0.35°)
+    - Supports Black & White / Grayscale mode for B&W laser printers and scanners
+    - Increased authentic ADF paper feed skew (0.6° - 0.8°)
+    - Printer toner specks and scanner glass dust particles (salt & pepper imperfections)
+    - Realistic scanner sensor noise & paper fiber texture
     - Re-encodes as JPEG quality tuned to keep total size strictly < 280 KB.
     """
     new_doc = fitz.open()
-    angles = [0.32, -0.26, 0.28, -0.24]
+    angles = [0.72, -0.65, 0.68, -0.58]
     num_pages = len(doc)
-    target_quality = 68 if num_pages == 1 else 61
+    target_quality = 64 if num_pages == 1 else 56
 
     for idx, page in enumerate(doc):
         pix = page.get_pixmap(dpi=150)
         im = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
 
-        # 1. Dull bright digital colors (desaturate by ~24%)
-        im = ImageEnhance.Color(im).enhance(0.76)
+        if bw_mode:
+            # 1. Convert to Grayscale (B&W scanner & printer)
+            im_gray = im.convert("L")
+            arr = np.array(im_gray, dtype=np.float32)
 
-        # 2. Lift black levels slightly and tone paper white
-        arr = np.array(im, dtype=np.float32)
-        arr = arr * 0.925 + 16.0
+            # 2. Scanner optical contrast & toner threshold curve
+            arr = np.where(arr > 200, 242.0 + (arr - 200.0) * 0.22, arr * 0.88 + 12.0)
 
-        # 3. Micro grain / sensor noise
-        np.random.seed(100 + idx)
-        noise = np.random.normal(0, 1.8, arr.shape)
-        arr = np.clip(arr + noise, 0, 255).astype(np.uint8)
-        im_scanned = Image.fromarray(arr)
+            # 3. Random printer toner specks & scanner glass dust
+            np.random.seed(100 + idx)
+            speck_mask = np.random.random(arr.shape)
+            arr = np.where(speck_mask < 0.0003, np.random.uniform(25, 75, arr.shape), arr)
 
-        # 4. Subtle scanner rotation
+            # 4. Scanner sensor noise & paper fiber texture
+            noise = np.random.normal(0, 2.2, arr.shape)
+            arr = np.clip(arr + noise, 0, 255).astype(np.uint8)
+            im_proc = Image.fromarray(arr, mode="L")
+            fill_val = 252
+        else:
+            # Color scan with dulled ink
+            im_dulled = ImageEnhance.Color(im).enhance(0.76)
+            arr = np.array(im_dulled, dtype=np.float32)
+            arr = arr * 0.925 + 16.0
+            np.random.seed(100 + idx)
+            speck_mask = np.random.random(arr.shape[:2])
+            for c in range(3):
+                arr[:, :, c] = np.where(speck_mask < 0.0003, np.random.uniform(25, 75, arr.shape[:2]), arr[:, :, c])
+            noise = np.random.normal(0, 2.0, arr.shape)
+            arr = np.clip(arr + noise, 0, 255).astype(np.uint8)
+            im_proc = Image.fromarray(arr, mode="RGB")
+            fill_val = (250, 249, 247)
+
+        # 5. Noticeable ADF feeder tilt
         angle = angles[idx % len(angles)]
-        im_rotated = im_scanned.rotate(angle, resample=Image.Resampling.BICUBIC, expand=False, fillcolor=(250, 249, 247))
+        im_rot = im_proc.rotate(angle, resample=Image.Resampling.BICUBIC, expand=False, fillcolor=fill_val)
 
         buf = io.BytesIO()
-        im_rotated.save(buf, format="JPEG", quality=target_quality, optimize=True)
+        im_rot.save(buf, format="JPEG", quality=target_quality, optimize=True)
 
         new_page = new_doc.new_page(width=page.rect.width, height=page.rect.height)
         new_page.insert_image(page.rect, stream=buf.getvalue())
@@ -437,7 +455,7 @@ def apply_scanned_effect(doc: fitz.Document, max_kb: int = 270) -> fitz.Document
     return new_doc
 
 
-def convert_document(input_path: str, output_path: str, hypothecation: str = None, new_date: str = None, affix_stamp: bool = True, doc_type: str = "auto", scanned_effect: bool = True) -> dict:
+def convert_document(input_path: str, output_path: str, hypothecation: str = None, new_date: str = None, affix_stamp: bool = True, doc_type: str = "auto", scanned_effect: bool = True, bw_mode: bool = True) -> dict:
     """
     Main conversion entry point.
     Processes each page individually, accurately handling standalone Tax Invoices,
@@ -560,7 +578,7 @@ def convert_document(input_path: str, output_path: str, hypothecation: str = Non
     # Apply scanned effect (printing & scanning imperfections, dull colors, tilt, grain)
     # or size optimization if scanned effect is disabled
     if scanned_effect:
-        scanned_doc = apply_scanned_effect(doc)
+        scanned_doc = apply_scanned_effect(doc, bw_mode=bw_mode)
         doc.close()
         doc = scanned_doc
     else:
@@ -619,7 +637,7 @@ def convert_document(input_path: str, output_path: str, hypothecation: str = Non
 convert_shanti_to_annapurna = convert_document
 
 
-def batch_convert(input_dir: str, output_dir: str, hypothecation: str = None, new_date: str = None, affix_stamp: bool = True, scanned_effect: bool = True, progress_callback=None) -> list:
+def batch_convert(input_dir: str, output_dir: str, hypothecation: str = None, new_date: str = None, affix_stamp: bool = True, scanned_effect: bool = True, bw_mode: bool = True, progress_callback=None) -> list:
     """Batch convert all PDF invoices and sale certificates in a directory."""
     os.makedirs(output_dir, exist_ok=True)
     results = []
@@ -632,7 +650,7 @@ def batch_convert(input_dir: str, output_dir: str, hypothecation: str = None, ne
         out_file = os.path.join(output_dir, f"{base_stem}_smn{ext}")
 
         try:
-            res = convert_document(in_file, out_file, hypothecation=hypothecation, new_date=new_date, affix_stamp=affix_stamp, scanned_effect=scanned_effect)
+            res = convert_document(in_file, out_file, hypothecation=hypothecation, new_date=new_date, affix_stamp=affix_stamp, scanned_effect=scanned_effect, bw_mode=bw_mode)
             res["filename"] = filename
             res["output_path"] = out_file
             results.append(res)

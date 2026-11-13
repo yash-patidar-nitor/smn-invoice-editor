@@ -172,7 +172,18 @@ HTML_TEMPLATE = """
                     </span>
                 </label>
                 <span class="form-hint" style="margin-top: 6px; display: block; margin-left: 4px;">
-                    Dulls bright digital colors, lifts ink black levels, adds authentic scanner tilt & subtle paper grain so documents look genuinely scanned for RTO portals. Strictly under 280 KB.
+                    Simulates physical print & ADF feeder scan: adds authentic tilt (0.6° - 0.8°), toner specks, paper grain, and uneven ink density so documents look genuinely scanned for RTO portals. Strictly under 280 KB.
+                </span>
+            </div>
+            <div style="margin-top: 10px;">
+                <label style="display: flex; align-items: center; gap: 10px; background: #f8fafc; border: 1px solid #cbd5e1; padding: 12px 16px; border-radius: 8px; cursor: pointer; user-select: none;">
+                    <input type="checkbox" id="bw-mode-checkbox" checked style="width: 18px; height: 18px; accent-color: #334155; cursor: pointer;">
+                    <span style="font-size: 13.5px; font-weight: 600; color: #1e293b;">
+                        🖨️ Black & White Scanner & Printer Mode (Monochrome / Grayscale — No Color)
+                    </span>
+                </label>
+                <span class="form-hint" style="margin-top: 6px; display: block; margin-left: 4px;">
+                    Matches a B&amp;W office laser printer &amp; scanner: converts all text and rubber stamps into authentic monochrome toner. Uncheck if you want color scan.
                 </span>
             </div>
         </div>
@@ -397,6 +408,8 @@ HTML_TEMPLATE = """
             formData.append('affix_stamp', affixStamp ? 'true' : 'false');
             const scannedLook = document.getElementById('scanned-look-checkbox') ? document.getElementById('scanned-look-checkbox').checked : true;
             formData.append('scanned_look', scannedLook ? 'true' : 'false');
+            const bwMode = document.getElementById('bw-mode-checkbox') ? document.getElementById('bw-mode-checkbox').checked : true;
+            formData.append('bw_mode', bwMode ? 'true' : 'false');
             selectedFiles.forEach(f => formData.append('files', f));
 
             try {
@@ -441,7 +454,11 @@ HTML_TEMPLATE = """
                     typeTag = '<span class="result-type-tag tag-both">Invoice + Certificate</span>';
                 }
                 const sizeBadge = f.file_size_kb ? `<span style="font-size:11px; background:#f1f5f9; color:#475569; padding:2px 6px; border-radius:4px; margin-left:6px; font-weight:600;">${f.file_size_kb} KB</span>` : '';
-                const scanBadge = f.scanned_look ? `<span style="font-size:11px; background:#fef3c7; color:#854d0e; padding:2px 6px; border-radius:4px; margin-left:6px; font-weight:600;">📄 Scanned Look</span>` : '';
+                const scanBadge = f.scanned_look 
+                    ? (f.bw_mode 
+                        ? `<span style="font-size:11px; background:#f1f5f9; color:#1e293b; padding:2px 6px; border-radius:4px; margin-left:6px; font-weight:600;">🖨️ B&W Scan</span>` 
+                        : `<span style="font-size:11px; background:#fef3c7; color:#854d0e; padding:2px 6px; border-radius:4px; margin-left:6px; font-weight:600;">📄 Color Scan</span>`) 
+                    : '';
 
                 return `
                 <div class="result-item">
@@ -491,6 +508,7 @@ def api_convert():
     new_date = request.form.get('new_date', '').strip()
     affix_stamp = request.form.get('affix_stamp', 'true').lower() == 'true'
     scanned_look = request.form.get('scanned_look', 'true').lower() == 'true'
+    bw_mode = request.form.get('bw_mode', 'true').lower() == 'true'
 
     doc_mode = request.form.get('doc_mode', 'invoice')
 
@@ -528,7 +546,8 @@ def api_convert():
                 hypothecation=hypothecation,
                 new_date=new_date,
                 affix_stamp=affix_stamp,
-                scanned_effect=scanned_look
+                scanned_effect=scanned_look,
+                bw_mode=bw_mode
             )
 
             file_id = str(uuid.uuid4())
@@ -551,7 +570,8 @@ def api_convert():
                 'headers_replaced': stats.get('headers_replaced', 0),
                 'footers_replaced': stats.get('footers_replaced', 0),
                 'file_size_kb': file_size_kb,
-                'scanned_look': scanned_look
+                'scanned_look': scanned_look,
+                'bw_mode': bw_mode
             })
         except Exception as e:
             return jsonify({'error': str(e)}), 500

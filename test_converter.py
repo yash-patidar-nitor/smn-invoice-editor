@@ -184,32 +184,37 @@ def test_mock_ci():
         assert len(p_f22_out.search_for("FORM 22")) >= 1
         doc_f22_out.close()
         print("MOCK FORM 22 CI TEST PASSED!")
-        # 4. Mock Scanned Effect CI Test (Realistic scanning imperfections, tilt, dulling, and < 280 KB limit)
+        # 4. Mock Scanned Effect CI Test (Realistic scanning imperfections, tilt, dulling, B&W & Color, and < 280 KB limit)
         out_sc_scanned = os.path.join(tmpdir, "mock_sc_scanned.pdf")
-        stats_sc_scanned = converter.convert_document(mock_sc, out_sc_scanned, hypothecation="TATA CAPITAL LTD", new_date="25/11/2026", affix_stamp=True, scanned_effect=True)
+        stats_sc_scanned = converter.convert_document(mock_sc, out_sc_scanned, hypothecation="TATA CAPITAL LTD", new_date="25/11/2026", affix_stamp=True, scanned_effect=True, bw_mode=True)
         assert stats_sc_scanned["status"] == "success"
         doc_sc_scanned = fitz.open(out_sc_scanned)
         assert len(doc_sc_scanned[0].get_images()) >= 1
         doc_sc_scanned.close()
 
         out_inv_scanned = os.path.join(tmpdir, "mock_inv_scanned.pdf")
-        stats_inv_scanned = converter.convert_document(mock_inv, out_inv_scanned, hypothecation="HERO FINCORP LTD", new_date="26/11/2026", affix_stamp=True, scanned_effect=True)
+        stats_inv_scanned = converter.convert_document(mock_inv, out_inv_scanned, hypothecation="HERO FINCORP LTD", new_date="26/11/2026", affix_stamp=True, scanned_effect=True, bw_mode=True)
         assert stats_inv_scanned["status"] == "success"
         doc_inv_scanned = fitz.open(out_inv_scanned)
         assert len(doc_inv_scanned[0].get_images()) >= 1
         doc_inv_scanned.close()
 
         out_f22_scanned = os.path.join(tmpdir, "mock_f22_scanned.pdf")
-        stats_f22_scanned = converter.convert_document(mock_f22, out_f22_scanned, affix_stamp=True, scanned_effect=True)
+        stats_f22_scanned = converter.convert_document(mock_f22, out_f22_scanned, affix_stamp=True, scanned_effect=True, bw_mode=True)
         assert stats_f22_scanned["status"] == "success"
         doc_f22_scanned = fitz.open(out_f22_scanned)
         assert len(doc_f22_scanned[0].get_images()) >= 1
         doc_f22_scanned.close()
 
-        print("REALISTIC SCANNED EFFECT CI TEST PASSED!")
+        # Also test color scan mode
+        out_inv_color = os.path.join(tmpdir, "mock_inv_color.pdf")
+        stats_inv_color = converter.convert_document(mock_inv, out_inv_color, hypothecation="HERO FINCORP LTD", new_date="26/11/2026", affix_stamp=True, scanned_effect=True, bw_mode=False)
+        assert stats_inv_color["status"] == "success"
+
+        print("REALISTIC SCANNED EFFECT (B&W + COLOR) CI TEST PASSED!")
 
         # Verify strict file size limit (< 280 KB) across all mock outputs
-        for path in [out_sc, out_inv, out_f22, out_sc_scanned, out_inv_scanned, out_f22_scanned]:
+        for path in [out_sc, out_inv, out_f22, out_sc_scanned, out_inv_scanned, out_f22_scanned, out_inv_color]:
             sz = os.path.getsize(path) / 1024.0
             assert sz < 280.0, f"File {path} is {sz:.1f} KB, exceeding strict 280 KB limit!"
         print("STRICT < 280 KB SIZE VERIFICATION PASSED!")
