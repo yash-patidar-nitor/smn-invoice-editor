@@ -399,16 +399,15 @@ def convert_sale_certificate(doc: fitz.Document, hypothecation: str = None, new_
 def apply_scanned_effect(doc: fitz.Document, bw_mode: bool = True, max_kb: int = 270) -> fitz.Document:
     """
     Renders PDF pages as realistic physically printed, stamped, and scanned pages:
-    - Supports Black & White / Grayscale mode for B&W laser printers and scanners
-    - Increased authentic ADF paper feed skew (0.6° - 0.8°)
-    - Printer toner specks and scanner glass dust particles (salt & pepper imperfections)
-    - Realistic scanner sensor noise & paper fiber texture
+    - Clean paper background without grain, salt-and-pepper noise, or faint dots
+    - Crisp monochromatic laser printer toner on smooth paper
+    - Natural ADF paper feed skew (0.5° - 0.65°)
     - Re-encodes as JPEG quality tuned to keep total size strictly < 280 KB.
     """
     new_doc = fitz.open()
-    angles = [0.72, -0.65, 0.68, -0.58]
+    angles = [0.55, -0.48, 0.50, -0.42]
     num_pages = len(doc)
-    target_quality = 64 if num_pages == 1 else 56
+    target_quality = 68 if num_pages == 1 else 60
 
     for idx, page in enumerate(doc):
         pix = page.get_pixmap(dpi=150)
@@ -419,34 +418,20 @@ def apply_scanned_effect(doc: fitz.Document, bw_mode: bool = True, max_kb: int =
             im_gray = im.convert("L")
             arr = np.array(im_gray, dtype=np.float32)
 
-            # 2. Scanner optical contrast & toner threshold curve
-            arr = np.where(arr > 200, 242.0 + (arr - 200.0) * 0.22, arr * 0.88 + 12.0)
-
-            # 3. Random printer toner specks & scanner glass dust
-            np.random.seed(100 + idx)
-            speck_mask = np.random.random(arr.shape)
-            arr = np.where(speck_mask < 0.0003, np.random.uniform(25, 75, arr.shape), arr)
-
-            # 4. Scanner sensor noise & paper fiber texture
-            noise = np.random.normal(0, 2.2, arr.shape)
-            arr = np.clip(arr + noise, 0, 255).astype(np.uint8)
+            # 2. Scanner optical contrast: clean smooth paper background, crisp dark toner
+            arr = np.where(arr >= 210.0, np.clip(248.0 + (arr - 210.0) * 0.17, 0, 255), arr * 0.88)
+            arr = np.clip(arr, 0, 255).astype(np.uint8)
             im_proc = Image.fromarray(arr, mode="L")
-            fill_val = 252
+            fill_val = 255
         else:
-            # Color scan with dulled ink
-            im_dulled = ImageEnhance.Color(im).enhance(0.76)
-            arr = np.array(im_dulled, dtype=np.float32)
-            arr = arr * 0.925 + 16.0
-            np.random.seed(100 + idx)
-            speck_mask = np.random.random(arr.shape[:2])
-            for c in range(3):
-                arr[:, :, c] = np.where(speck_mask < 0.0003, np.random.uniform(25, 75, arr.shape[:2]), arr[:, :, c])
-            noise = np.random.normal(0, 2.0, arr.shape)
-            arr = np.clip(arr + noise, 0, 255).astype(np.uint8)
+            # Color scan with clean background
+            arr = np.array(im, dtype=np.float32)
+            arr = np.where(arr >= 210.0, np.clip(248.0 + (arr - 210.0) * 0.17, 0, 255), arr * 0.92)
+            arr = np.clip(arr, 0, 255).astype(np.uint8)
             im_proc = Image.fromarray(arr, mode="RGB")
-            fill_val = (250, 249, 247)
+            fill_val = (255, 255, 255)
 
-        # 5. Noticeable ADF feeder tilt
+        # 3. Authentic ADF paper feed tilt
         angle = angles[idx % len(angles)]
         im_rot = im_proc.rotate(angle, resample=Image.Resampling.BICUBIC, expand=False, fillcolor=fill_val)
 
