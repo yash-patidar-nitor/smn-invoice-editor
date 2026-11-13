@@ -54,23 +54,23 @@ def get_stamp_path() -> str:
 
 
 def affix_dealer_stamp_invoice(page: fitz.Page, stamp_path: str = None) -> bool:
-    """Affix authentic Annapurna Motors circular rubber stamp and signature onto Tax Invoice."""
+    """Affix authentic Annapurna Motors circular rubber stamp and signature onto Tax Invoice, overlapping both For ANNAPURNA MOTORS and Authorized Signatory."""
     path = stamp_path or get_stamp_path()
     if not path or not os.path.exists(path):
         return False
-    # Tax Invoice: centered over Authorized Signatory line
-    rect = fitz.Rect(438, 680, 524, 766)
+    # Tax Invoice: precisely overlays both 'For ANNAPURNA MOTORS' (at y=646) and 'Authorized Signatory' (at y=684)
+    rect = fitz.Rect(436.0, 626.0, 534.0, 718.0)
     page.insert_image(rect, filename=path, keep_proportion=True)
     return True
 
 
 def affix_dealer_stamp_sale_certificate(page: fitz.Page, stamp_path: str = None) -> bool:
-    """Affix authentic Annapurna Motors circular rubber stamp and signature onto Form 21 Sale Certificate."""
+    """Affix authentic Annapurna Motors circular rubber stamp and signature onto Form 21 Sale Certificate, overlapping both For ANNAPURNA MOTORS and Authorized Signatory."""
     path = stamp_path or get_stamp_path()
     if not path or not os.path.exists(path):
         return False
-    # Sale Certificate: positioned between For ANNAPURNA MOTORS and Authorized Signatory
-    rect = fitz.Rect(438, 614, 522, 700)
+    # Sale Certificate: precisely overlays both 'For ANNAPURNA MOTORS' (at y=605) and 'Authorized Signatory' (at y=660)
+    rect = fitz.Rect(436.0, 585.0, 534.0, 678.0)
     page.insert_image(rect, filename=path, keep_proportion=True)
     return True
 
