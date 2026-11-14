@@ -1149,10 +1149,10 @@
                 }
             }, 3000);
 
-            const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-            const apiUrl = isLocal 
-                ? '/api/hero-download-and-convert' 
-                : 'http://localhost:5000/api/hero-download-and-convert';
+            // When running on the web server, calls the server backend directly
+            const apiUrl = (window.location.protocol === 'file:')
+                ? 'http://localhost:5000/api/hero-download-and-convert'
+                : '/api/hero-download-and-convert';
 
             try {
                 const resp = await fetch(apiUrl, {
@@ -1180,18 +1180,14 @@
                 }
 
                 const data = await resp.json();
-                pStatus.innerText = 'All documents downloaded and converted successfully! ✅';
+                pStatus.innerText = 'All documents downloaded and converted on server! ✅';
                 renderHeroResults(data, apiUrl);
 
             } catch (err) {
                 clearInterval(timer);
                 pFill.style.width = '0%';
                 pBox.style.display = 'none';
-                if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
-                    alert('Hero Portal Auto-Downloader requires the local automation server running on your computer.\n\nPlease double-click Launch_Web_App.bat or run "python server.py" and try again.');
-                } else {
-                    alert('Hero Portal Automation Error:\n' + err.message);
-                }
+                alert('Hero Portal Server Automation Error:\n' + err.message);
             } finally {
                 btn.disabled = false;
                 btn.innerText = '🚀 Fetch 3 Documents from Hero Portal & Convert to Annapurna Motors';
