@@ -538,10 +538,17 @@ async def run_hero_automation(
 
     async with async_playwright() as p:
         if status_cb:
-            status_cb("Starting browser session…")
+            status_cb("Starting browser session on web server…")
         browser = await p.chromium.launch(
             headless=headless,
-            args=["--disable-blink-features=AutomationControlled", "--start-maximized"]
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--start-maximized"
+            ]
         )
         context = await browser.new_context(
             accept_downloads=True,

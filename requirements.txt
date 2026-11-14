@@ -1,2 +1,4 @@
 pymupdf>=2.1.0
 flask>=3.0.0
+playwright>=1.40.0
+aiohttp>=3.9.0
