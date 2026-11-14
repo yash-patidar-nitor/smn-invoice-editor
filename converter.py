@@ -125,12 +125,17 @@ def optimize_pdf_size(doc: fitz.Document, max_kb: int = 270) -> bool:
 def detect_document_type(doc: fitz.Document, filename: str = "") -> str:
     """Detect whether the document is Form 22, Form 21 Sale Certificate, or Tax Invoice."""
     fn = (filename or "").lower()
-    if "22" in fn or "form 22" in fn or "road-worthiness" in fn:
+    if "form22" in fn or "form 22" in fn or "form_22" in fn or "form-22" in fn or "road-worthiness" in fn or "road worthiness" in fn or "22" in fn:
         return "form_22"
-    first_page_text = doc[0].get_text()
-    if "FORM 22" in first_page_text or "ROAD-WORTHINESS" in first_page_text or "Rule 47 (1)(g)" in first_page_text:
+    if "sale" in fn or "certificate" in fn or "form21" in fn or "form 21" in fn or "form_21" in fn or "form-21" in fn or "21" in fn:
+        return "sale_certificate"
+    if "invoice" in fn or "gst" in fn or "retail" in fn or "tax" in fn:
+        return "invoice"
+
+    first_page_text = doc[0].get_text().upper()
+    if "FORM 22" in first_page_text or "ROAD-WORTHINESS" in first_page_text or "RULE 47 (1)(G)" in first_page_text:
         return "form_22"
-    if "SALE CERTIFICATE" in first_page_text or "Form No .21" in first_page_text or "Form 21" in first_page_text:
+    if "SALE CERTIFICATE" in first_page_text or "FORM NO .21" in first_page_text or "FORM 21" in first_page_text:
         return "sale_certificate"
     return "invoice"
 
