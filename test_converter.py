@@ -229,6 +229,50 @@ def test_mock_ci():
         print("STRICT < 280 KB SIZE VERIFICATION PASSED!")
 
 
+def test_hero_downloaded_documents():
+    """Verifies that all 3 raw documents downloaded from Hero portal convert to Annapurna single-page < 280 KB."""
+    import hero_downloader
+    from pathlib import Path
+
+    raw_candidates = [
+        Path("HeroMotoCorp_Downloads/MBLHAW471THEB1423"),
+        Path("../HeroMotoCorp_Downloads/MBLHAW471THEB1423")
+    ]
+    raw_dir = None
+    for cand in raw_candidates:
+        if cand.exists():
+            raw_dir = cand
+            break
+
+    if raw_dir and raw_dir.exists():
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_dir = Path(tmpdir)
+            files = list(raw_dir.glob("*.pdf"))
+            assert len(files) >= 3, f"Expected 3 raw PDFs in {raw_dir}, found {len(files)}"
+
+            for rf in files:
+                res = hero_downloader.convert_downloaded_pdf(
+                    raw_pdf_path=rf,
+                    output_dir=out_dir,
+                    hypothecation="HERO FINCORP LTD",
+                    new_date="15/11/2026",
+                    affix_stamp=True,
+                    scanned_effect=True,
+                    bw_mode=True
+                )
+                assert res is not None, f"Conversion failed for {rf.name}"
+                cpath = res["converted_path"]
+                doc = fitz.open(cpath)
+                assert len(doc) == 1, f"{cpath} has {len(doc)} pages, expected strictly 1"
+                doc.close()
+                sz = os.path.getsize(cpath) / 1024.0
+                assert sz < 280.0, f"{cpath} is {sz:.1f} KB, expected < 280 KB"
+                print(f"VERIFIED HERO DOC: {res['filename']} ({sz:.1f} KB, 1 page)")
+
+        print("HERO DOWNLOADED DOCUMENTS CONVERSION TEST PASSED!")
+
+
 if __name__ == "__main__":
     test_mock_ci()
     test_real_files()
+    test_hero_downloaded_documents()
