@@ -636,11 +636,18 @@ HTML_TEMPLATE = """
 
 @app.route('/')
 def index():
+    html_path = os.path.join(os.path.dirname(__file__), 'index.html')
+    if os.path.exists(html_path):
+        with open(html_path, 'r', encoding='utf-8') as f:
+            return f.read()
     return render_template_string(HTML_TEMPLATE)
 
 
-@app.route('/api/hero-download-and-convert', methods=['POST'])
+@app.route('/api/hero-download-and-convert', methods=['POST', 'OPTIONS'])
 def api_hero_download_and_convert():
+    if request.method == 'OPTIONS':
+        return ('', 204)
+
     data = request.get_json(silent=True) or request.form
     user_id = (data.get('user_id') or '').strip() or hero_downloader.DEFAULT_USERNAME
     password = (data.get('password') or '').strip() or hero_downloader.DEFAULT_PASSWORD
