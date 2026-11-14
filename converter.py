@@ -343,6 +343,10 @@ def convert_sale_certificate(doc: fitz.Document, hypothecation: str = None, new_
     footers_replaced = 0
     stamp_affixed = False
 
+    # Strictly truncate 2nd page: only keep Page 1 (Page 0)
+    if len(doc) > 1:
+        doc.select([0])
+
     for page in doc:
         # 1. Header Block on Sale Certificate (x: ~54 to 440, y: ~22 to 75)
         shanti_hits = [h for h in page.search_for("Shanti Motors") if h.y0 < 100]
@@ -583,10 +587,12 @@ def convert_document(input_path: str, output_path: str, hypothecation: str = Non
                         if affix_dealer_stamp_invoice(page):
                             stamps_affixed += 1
 
-    # For standalone Tax Invoices: strictly ignore Page 2 (Terms & Conditions) and only keep Page 1 (Page 0)
-    is_invoice = (detected_type == "invoice") or ("invoice" in types_found and "sale_certificate" not in types_found)
-    if is_invoice and len(doc) > 1:
+    # User requirement: Strictly truncate the 2nd page in ALL docs (Invoice, Sale Certificate, Form 22).
+    # Final output must strictly only contain Page 1 (Page 0).
+    if len(doc) > 1:
         doc.select([0])
+
+    is_invoice = (detected_type == "invoice") or ("invoice" in types_found and "sale_certificate" not in types_found)
 
     # Determine stamp positioning info for scanned effect
     if affix_stamp:

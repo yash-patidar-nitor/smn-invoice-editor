@@ -111,6 +111,8 @@ def test_mock_ci():
         p.insert_text((80.0, 356.0), "purchase/hypothecation with", fontsize=9.0)
         p.insert_text((326.0, 356.0), "HERO FINCORP LTD", fontsize=9.0)
         p.insert_text((480.0, 595.0), "For M/s.Shanti Motors", fontsize=9.0)
+        p_extra = doc.new_page(width=595, height=842)
+        p_extra.insert_text((50.0, 50.0), "Extra Sale Certificate page that must be truncated", fontsize=10.0)
         doc.save(mock_sc)
         doc.close()
 
@@ -121,13 +123,14 @@ def test_mock_ci():
         assert stats_sc["stamps_affixed"] == 1
 
         doc_out = fitz.open(out_sc)
+        assert len(doc_out) == 1, f"Expected strictly 1 page for Sale Certificate, got {len(doc_out)}"
         p_out = doc_out[0]
         assert len(p_out.search_for("Shanti Motors")) == 0
         assert len(p_out.search_for("ANNAPURNA MOTORS")) >= 1
         assert len(p_out.search_for("TATA CAPITAL LTD")) >= 1
         assert len(p_out.search_for("25/11/2026")) >= 2
         doc_out.close()
-        print("MOCK SALE CERTIFICATE CI TEST PASSED!")
+        print("MOCK SALE CERTIFICATE CI TEST PASSED (STRICT 1-PAGE)!")
 
         # 2. Mock Tax Invoice
         mock_inv = os.path.join(tmpdir, "mock_inv.pdf")
@@ -169,6 +172,8 @@ def test_mock_ci():
         p_f22.insert_text((180.0, 170.0), "ROAD-WORTHINESS CERTIFICATE", fontsize=11.0)
         p_f22.insert_text((420.0, 700.0), "For Hero MotoCorp Ltd.", fontsize=10.0)
         p_f22.insert_text((420.0, 750.0), "Head - National Sales (Authorized Signatory)", fontsize=9.0)
+        p_f22_extra = doc_f22.new_page(width=595, height=842)
+        p_f22_extra.insert_text((50.0, 50.0), "Extra Form 22 page that must be truncated", fontsize=10.0)
         doc_f22.save(mock_f22)
         doc_f22.close()
 
@@ -177,18 +182,20 @@ def test_mock_ci():
         assert stats_f22["status"] == "success"
         assert stats_f22["doc_type"] == "form_22"
         assert stats_f22["stamps_affixed"] == 1
-        # Form 22 must NOT change Hero MotoCorp or text
+        # Form 22 must NOT change Hero MotoCorp or text and MUST be strictly 1 page
         doc_f22_out = fitz.open(out_f22)
+        assert len(doc_f22_out) == 1, f"Expected strictly 1 page for Form 22, got {len(doc_f22_out)}"
         p_f22_out = doc_f22_out[0]
         assert len(p_f22_out.search_for("Hero MotoCorp Ltd.")) >= 1
         assert len(p_f22_out.search_for("FORM 22")) >= 1
         doc_f22_out.close()
-        print("MOCK FORM 22 CI TEST PASSED!")
+        print("MOCK FORM 22 CI TEST PASSED (STRICT 1-PAGE)!")
         # 4. Mock Scanned Effect CI Test (Realistic scanning imperfections, tilt, dulling, B&W & Color, and < 280 KB limit)
         out_sc_scanned = os.path.join(tmpdir, "mock_sc_scanned.pdf")
         stats_sc_scanned = converter.convert_document(mock_sc, out_sc_scanned, hypothecation="TATA CAPITAL LTD", new_date="25/11/2026", affix_stamp=True, scanned_effect=True, bw_mode=True)
         assert stats_sc_scanned["status"] == "success"
         doc_sc_scanned = fitz.open(out_sc_scanned)
+        assert len(doc_sc_scanned) == 1, f"Expected strictly 1 page for scanned Sale Cert, got {len(doc_sc_scanned)}"
         assert len(doc_sc_scanned[0].get_images()) >= 1
         doc_sc_scanned.close()
 
@@ -196,6 +203,7 @@ def test_mock_ci():
         stats_inv_scanned = converter.convert_document(mock_inv, out_inv_scanned, hypothecation="HERO FINCORP LTD", new_date="26/11/2026", affix_stamp=True, scanned_effect=True, bw_mode=True)
         assert stats_inv_scanned["status"] == "success"
         doc_inv_scanned = fitz.open(out_inv_scanned)
+        assert len(doc_inv_scanned) == 1, f"Expected strictly 1 page for scanned Invoice, got {len(doc_inv_scanned)}"
         assert len(doc_inv_scanned[0].get_images()) >= 1
         doc_inv_scanned.close()
 
@@ -203,6 +211,7 @@ def test_mock_ci():
         stats_f22_scanned = converter.convert_document(mock_f22, out_f22_scanned, affix_stamp=True, scanned_effect=True, bw_mode=True)
         assert stats_f22_scanned["status"] == "success"
         doc_f22_scanned = fitz.open(out_f22_scanned)
+        assert len(doc_f22_scanned) == 1, f"Expected strictly 1 page for scanned Form 22, got {len(doc_f22_scanned)}"
         assert len(doc_f22_scanned[0].get_images()) >= 1
         doc_f22_scanned.close()
 

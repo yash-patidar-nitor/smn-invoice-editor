@@ -103,7 +103,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <span class="badge">Shanti Motors ➔ Annapurna Motors • v2.8 B&W Print + Blue Seal Scan</span>
+            <span class="badge">Shanti Motors ➔ Annapurna Motors • v2.9 Strict Single-Page All Docs</span>
             <h1 class="title">Hero Document Converter</h1>
             <p class="subtitle">Pixel-perfect conversion for Hero MotoCorp Invoices & Form 21 Sale Certificates</p>
         </div>
@@ -359,9 +359,9 @@
             });
         }
 
-        async function applyScannedLook(pdfBytes, bwMode = true, maxPages = null, stampInfo = null) {
+        async function applyScannedLook(pdfBytes, bwMode = true, maxPages = 1, stampInfo = null) {
             if (typeof pdfjsLib === 'undefined' || typeof PDFLib === 'undefined') {
-                return await ensureStrictlyUnder280KB(pdfBytes, maxPages);
+                return await ensureStrictlyUnder280KB(pdfBytes, maxPages || 1);
             }
             try {
                 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -371,8 +371,8 @@
                 const stampImgElement = stampInfo ? await getStampImage() : null;
 
                 const angles = [0.55, -0.48, 0.50, -0.42];
-                const targetQuality = (maxPages === 1 || pdf.numPages === 1) ? 0.68 : 0.60;
-                const numPagesToProcess = maxPages ? Math.min(pdf.numPages, maxPages) : pdf.numPages;
+                const targetQuality = 0.68;
+                const numPagesToProcess = maxPages ? Math.min(pdf.numPages, maxPages) : 1;
 
                 for (let p = 1; p <= numPagesToProcess; p++) {
                     const page = await pdf.getPage(p);
@@ -514,10 +514,7 @@
             }
         }
 
-        async function ensureStrictlyUnder280KB(pdfBytes, maxPages = null) {
-            if (!maxPages && pdfBytes.byteLength <= 270 * 1024) {
-                return pdfBytes;
-            }
+        async function ensureStrictlyUnder280KB(pdfBytes, maxPages = 1) {
             try {
                 if (typeof pdfjsLib === 'undefined') {
                     return pdfBytes;
@@ -525,8 +522,11 @@
                 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
                 const loadingTask = pdfjsLib.getDocument({ data: pdfBytes });
                 const pdf = await loadingTask.promise;
+                if (pdf.numPages === 1 && pdfBytes.byteLength <= 270 * 1024) {
+                    return pdfBytes;
+                }
                 const newDoc = await PDFLib.PDFDocument.create();
-                const numPagesToProcess = maxPages ? Math.min(pdf.numPages, maxPages) : pdf.numPages;
+                const numPagesToProcess = maxPages ? Math.min(pdf.numPages, maxPages) : 1;
 
                 for (let p = 1; p <= numPagesToProcess; p++) {
                     const page = await pdf.getPage(p);
@@ -903,12 +903,18 @@
                 }
             }
 
-            let modifiedPdfBytes = await pdfDoc.save();
+            // User requirement: Strictly truncate the 2nd page in ALL docs (Sale Certificate, Form 22, Invoice).
+            // In the final output, strictly only include the first page (Page 0).
+            const singlePageDoc = await PDFLib.PDFDocument.create();
+            const [copiedPage0] = await singlePageDoc.copyPages(pdfDoc, [0]);
+            singlePageDoc.addPage(copiedPage0);
+
+            let modifiedPdfBytes = await singlePageDoc.save();
             if (scannedLook) {
                 const scStampInfo = affixStamp ? { x: 436.0, y: 585.0, width: 98.0, height: 93.0 } : null;
-                modifiedPdfBytes = await applyScannedLook(modifiedPdfBytes, bwMode, null, scStampInfo);
+                modifiedPdfBytes = await applyScannedLook(modifiedPdfBytes, bwMode, 1, scStampInfo);
             } else {
-                modifiedPdfBytes = await ensureStrictlyUnder280KB(modifiedPdfBytes);
+                modifiedPdfBytes = await ensureStrictlyUnder280KB(modifiedPdfBytes, 1);
             }
             return {
                 blob: new Blob([modifiedPdfBytes], { type: 'application/pdf' }),
@@ -920,7 +926,7 @@
         /**
          * Dedicated Form 22 (Road-worthiness Certificate) Converter
          * Strictly affixes Annapurna Motors dealer seal & signature on bottom-left blank space.
-         * Zero text changes. Output is strictly below 280 KB.
+         * Zero text changes. Strictly 1-page output below 280 KB.
          */
         async function convertForm22Pdf(arrayBuffer, fileName, affixStamp = true, scannedLook = true, bwMode = true) {
             const pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer);
@@ -947,12 +953,18 @@
                 }
             }
 
-            let modifiedPdfBytes = await pdfDoc.save();
+            // User requirement: Strictly truncate the 2nd page in ALL docs (Sale Certificate, Form 22, Invoice).
+            // In the final output, strictly only include the first page (Page 0).
+            const singlePageDoc = await PDFLib.PDFDocument.create();
+            const [copiedPage0] = await singlePageDoc.copyPages(pdfDoc, [0]);
+            singlePageDoc.addPage(copiedPage0);
+
+            let modifiedPdfBytes = await singlePageDoc.save();
             if (scannedLook) {
                 const f22StampInfo = affixStamp ? { x: 180.0, y: 688.0, width: 88.0, height: 90.0 } : null;
-                modifiedPdfBytes = await applyScannedLook(modifiedPdfBytes, bwMode, null, f22StampInfo);
+                modifiedPdfBytes = await applyScannedLook(modifiedPdfBytes, bwMode, 1, f22StampInfo);
             } else {
-                modifiedPdfBytes = await ensureStrictlyUnder280KB(modifiedPdfBytes);
+                modifiedPdfBytes = await ensureStrictlyUnder280KB(modifiedPdfBytes, 1);
             }
             return {
                 blob: new Blob([modifiedPdfBytes], { type: 'application/pdf' }),
