@@ -1149,7 +1149,8 @@
                 }
             }, 3000);
 
-            const apiUrl = window.location.origin.includes('localhost') 
+            const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+            const apiUrl = isLocal 
                 ? '/api/hero-download-and-convert' 
                 : 'http://localhost:5000/api/hero-download-and-convert';
 
@@ -1203,7 +1204,14 @@
             const summary = document.getElementById('success-summary');
             const zipBtn = document.getElementById('btn-download-all');
 
-            const host = baseUrl.startsWith('http') ? new URL(baseUrl).origin : '';
+            let host = '';
+            if (baseUrl.startsWith('http')) {
+                host = new URL(baseUrl).origin;
+            } else if (window.location.protocol.startsWith('http')) {
+                host = window.location.origin;
+            } else {
+                host = 'http://localhost:5000';
+            }
 
             summary.innerText = `Successfully converted ${data.files.length} document(s) to Annapurna Motors (Strict Single-Page < 280 KB)!`;
             zipBtn.style.display = 'inline-block';
