@@ -187,11 +187,22 @@
                 <span class="form-hint">Downloads: 1. GST Retail Invoice, 2. Form 21 Sale Certificate, 3. Form 22.</span>
             </div>
 
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px; margin-bottom: 14px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px; margin-bottom: 12px;">
                 <label style="font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; cursor: pointer;">
                     <input type="checkbox" id="hero-headless" checked style="accent-color: var(--primary);">
                     Run browser silently in background (Headless)
                 </label>
+            </div>
+
+            <div style="margin-bottom: 14px; padding: 10px 12px; background: #f8fafc; border: 1px dashed var(--border); border-radius: 8px;">
+                <details style="font-size: 12.5px; color: var(--muted); cursor: pointer;" id="server-settings-details">
+                    <summary style="font-weight: 600; color: var(--text); user-select: none;">⚙️ Remote Web Server Settings (Optional)</summary>
+                    <div style="margin-top: 8px;">
+                        <label class="form-label" style="font-size: 12px;">Backend Server URL</label>
+                        <input type="text" class="form-control" id="backend-server-url" style="font-size: 12px; padding: 8px 10px;" placeholder="Leave blank for same server, or enter e.g. https://your-backend.onrender.com">
+                        <span class="form-hint" style="font-size: 11px;">If visiting from static GitHub Pages, enter your deployed cloud server URL (Render/Railway/Fly) or http://localhost:5000</span>
+                    </div>
+                </details>
             </div>
 
             <button class="btn-convert" id="btn-hero-fetch" onclick="startHeroDownload()">
@@ -261,6 +272,21 @@
 
         const fileInput = document.getElementById('file-input');
         const dropZone = document.getElementById('drop-zone');
+
+        // Restore saved remote backend server URL if previously configured
+        window.addEventListener('DOMContentLoaded', () => {
+            try {
+                const savedBackend = localStorage.getItem('hero_backend_url');
+                if (savedBackend) {
+                    const inputEl = document.getElementById('backend-server-url');
+                    if (inputEl) {
+                        inputEl.value = savedBackend;
+                        const details = document.getElementById('server-settings-details');
+                        if (details) details.open = true;
+                    }
+                }
+            } catch(e) {}
+        });
 
         function toggleHeroPass() {
             const p = document.getElementById('hero-pass');
@@ -1149,10 +1175,24 @@
                 }
             }, 3000);
 
-            // When running on the web server, calls the server backend directly
-            const apiUrl = (window.location.protocol === 'file:')
-                ? 'http://localhost:5000/api/hero-download-and-convert'
-                : '/api/hero-download-and-convert';
+            // Determine target backend server URL
+            let serverUrl = (document.getElementById('backend-server-url').value || '').trim();
+            if (serverUrl) {
+                if (serverUrl.endsWith('/')) serverUrl = serverUrl.slice(0, -1);
+                try { localStorage.setItem('hero_backend_url', serverUrl); } catch(e){}
+            }
+
+            let apiUrl = '';
+            if (serverUrl) {
+                apiUrl = serverUrl + '/api/hero-download-and-convert';
+            } else if (window.location.protocol === 'file:') {
+                apiUrl = 'http://localhost:5000/api/hero-download-and-convert';
+            } else if (window.location.hostname.includes('github.io')) {
+                // Static GitHub Pages host - requires connected backend
+                apiUrl = '/api/hero-download-and-convert';
+            } else {
+                apiUrl = '/api/hero-download-and-convert';
+            }
 
             try {
                 const resp = await fetch(apiUrl, {
@@ -1175,8 +1215,11 @@
                 pFill.style.width = '100%';
 
                 if (!resp.ok) {
-                    const err = await resp.json().catch(() => ({ error: 'Request failed' }));
-                    throw new Error(err.error || 'Server error occurred during download');
+                    if (resp.status === 405 && window.location.hostname.includes('github.io')) {
+                        throw new Error('GitHub Pages is a static file CDN and cannot execute Python / Playwright directly.\n\nTo run on a web server in the cloud:\n1. Deploy this repository to Render.com or Railway (using the included Dockerfile).\n2. Enter your cloud server URL under "Remote Web Server Settings" above.\n3. Or run python server.py on any office machine.');
+                    }
+                    const err = await resp.json().catch(() => null);
+                    throw new Error((err && err.error) ? err.error : `Server returned HTTP ${resp.status}`);
                 }
 
                 const data = await resp.json();
@@ -1187,7 +1230,7 @@
                 clearInterval(timer);
                 pFill.style.width = '0%';
                 pBox.style.display = 'none';
-                alert('Hero Portal Server Automation Error:\n' + err.message);
+                alert('Remote Server Automation Notice:\n\n' + err.message);
             } finally {
                 btn.disabled = false;
                 btn.innerText = '🚀 Fetch 3 Documents from Hero Portal & Convert to Annapurna Motors';
