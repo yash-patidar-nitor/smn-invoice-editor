@@ -6,6 +6,7 @@ Tax Invoices and Sale Certificates to Annapurna Motors format.
 
 import os
 import sys
+import re
 import threading
 import subprocess
 import tkinter as tk
@@ -25,6 +26,7 @@ class ModernInvoiceApp(tk.Tk):
 
         self.input_files = []
         self.output_dir = os.path.abspath("output_invoices")
+        self.sno_var = tk.StringVar(value="")
         self.hypo_var = tk.StringVar(value="Keep Original (No Change)")
         self.date_var = tk.StringVar(value="")
         self.last_converted_file = None
@@ -84,10 +86,17 @@ class ModernInvoiceApp(tk.Tk):
         grid_frame = ttk.Frame(opt_inner, style="Card.TFrame")
         grid_frame.pack(fill="x")
 
-        # Column 1: Hypothecation
+        # Column 1: S.No.
         col1 = ttk.Frame(grid_frame, style="Card.TFrame")
-        col1.pack(side="left", fill="x", expand=True, padx=(0, 8))
-        ttk.Label(col1, text="Hypothecation With:", style="Card.TLabel", font=self.font_bold).pack(anchor="w", pady=(0, 2))
+        col1.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        ttk.Label(col1, text="S.No. (Folder Name):", style="Card.TLabel", font=self.font_bold).pack(anchor="w", pady=(0, 2))
+        self.sno_entry = ttk.Entry(col1, textvariable=self.sno_var, font=self.font_regular)
+        self.sno_entry.pack(fill="x")
+
+        # Column 2: Hypothecation
+        col2 = ttk.Frame(grid_frame, style="Card.TFrame")
+        col2.pack(side="left", fill="x", expand=True, padx=(6, 6))
+        ttk.Label(col2, text="Hypothecation With:", style="Card.TLabel", font=self.font_bold).pack(anchor="w", pady=(0, 2))
 
         hypo_options = [
             "Keep Original (No Change)",
@@ -96,15 +105,15 @@ class ModernInvoiceApp(tk.Tk):
             "AASTHA SAKH SAHKARITA",
             "Leave Blank (Cash / None)"
         ]
-        self.hypo_combo = ttk.Combobox(col1, textvariable=self.hypo_var, values=hypo_options, state="readonly", font=self.font_regular)
+        self.hypo_combo = ttk.Combobox(col2, textvariable=self.hypo_var, values=hypo_options, state="readonly", font=self.font_regular)
         self.hypo_combo.pack(fill="x")
 
-        # Column 2: Date
-        col2 = ttk.Frame(grid_frame, style="Card.TFrame")
-        col2.pack(side="right", fill="x", expand=True, padx=(8, 0))
-        ttk.Label(col2, text="Change Date (DD/MM/YYYY):", style="Card.TLabel", font=self.font_bold).pack(anchor="w", pady=(0, 2))
+        # Column 3: Date
+        col3 = ttk.Frame(grid_frame, style="Card.TFrame")
+        col3.pack(side="left", fill="x", expand=True, padx=(6, 0))
+        ttk.Label(col3, text="Change Date (DD/MM/YYYY):", style="Card.TLabel", font=self.font_bold).pack(anchor="w", pady=(0, 2))
 
-        self.date_entry = ttk.Entry(col2, textvariable=self.date_var, font=self.font_regular)
+        self.date_entry = ttk.Entry(col3, textvariable=self.date_var, font=self.font_regular)
         self.date_entry.pack(fill="x")
 
         # Card 2: Input Selection
@@ -270,16 +279,18 @@ class ModernInvoiceApp(tk.Tk):
             hypo_val = hypo_raw.strip()
 
         date_val = self.date_var.get().strip()
+        sno_val = re.sub(r'[<>:"/\\|?*]', '', self.sno_var.get().strip())
 
         thread = threading.Thread(
             target=self.run_conversion_worker,
-            args=(out_dir, hypo_val, date_val),
+            args=(out_dir, hypo_val, date_val, sno_val),
             daemon=True
         )
         thread.start()
 
-    def run_conversion_worker(self, out_dir, hypo_val, date_val):
-        os.makedirs(out_dir, exist_ok=True)
+    def run_conversion_worker(self, out_dir, hypo_val, date_val, sno_val=""):
+        target_dir = os.path.join(out_dir, sno_val) if sno_val else out_dir
+        os.makedirs(target_dir, exist_ok=True)
         total = len(self.input_files)
 
         success_count = 0
@@ -287,12 +298,14 @@ class ModernInvoiceApp(tk.Tk):
         latest_converted = None
 
         self.log("=== Starting conversion to Annapurna Motors ===")
-        self.log(f"Destination: {out_dir}\n")
+        if sno_val:
+            self.log(f"Batch S.No. / Folder: {sno_val}")
+        self.log(f"Destination: {target_dir}\n")
 
         for idx, in_file in enumerate(self.input_files):
             fname = os.path.basename(in_file)
             stem, ext = os.path.splitext(fname)
-            out_file = os.path.join(out_dir, f"{stem}_smn{ext}")
+            out_file = os.path.join(target_dir, f"{stem}_smn{ext}")
 
             try:
                 res = converter.convert_document(

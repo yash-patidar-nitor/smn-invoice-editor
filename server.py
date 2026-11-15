@@ -7,6 +7,7 @@ Hypothecation dropdown, Date picker, and ZIP download.
 
 import os
 import io
+import re
 import zipfile
 import tempfile
 import uuid
@@ -53,8 +54,8 @@ HTML_TEMPLATE = """
         .card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 22px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
         .card-title { font-size: 15px; font-weight: 600; margin-bottom: 14px; color: var(--text-dark); display: flex; align-items: center; gap: 8px; }
 
-        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 6px; }
-        @media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } }
+        .form-grid { display: grid; grid-template-columns: 1fr 1.3fr 1.3fr; gap: 16px; margin-bottom: 6px; }
+        @media (max-width: 768px) { .form-grid { grid-template-columns: 1fr; } }
 
         .form-group { display: flex; flex-direction: column; gap: 6px; }
         .form-label { font-size: 13px; font-weight: 600; color: var(--text-dark); }
@@ -136,8 +137,13 @@ HTML_TEMPLATE = """
         <div class="card">
             <div class="card-title">1. Document Options (Optional)</div>
             <div class="form-grid">
-                <div class="form-group">
-                    <label class="form-label">Hypothecation With</label>
+                <div class="form-group" id="sno-group">
+                    <label class="form-label" for="sno-input">S.No. (Folder Name)</label>
+                    <input type="text" class="form-control" id="sno-input" placeholder="e.g. 1, 101, B-01">
+                    <span class="form-hint" id="sno-hint">Folder &amp; ZIP name in Batch All</span>
+                </div>
+                <div class="form-group" id="hypo-group">
+                    <label class="form-label" for="hypo-select">Hypothecation With</label>
                     <select class="form-control" id="hypo-select">
                         <option value="KEEP_ORIGINAL">Keep Original (No Change)</option>
                         <option value="HERO FINCORP LTD">HERO FINCORP LTD</option>
@@ -145,12 +151,12 @@ HTML_TEMPLATE = """
                         <option value="AASTHA SAKH SAHKARITA">AASTHA SAKH SAHKARITA</option>
                         <option value="BLANK">Leave Blank (Cash / None)</option>
                     </select>
-                    <span class="form-hint">Updates the hypothecation financier</span>
+                    <span class="form-hint" id="hypo-hint">Updates the hypothecation financier</span>
                 </div>
-                <div class="form-group">
-                    <label class="form-label">Change Date</label>
+                <div class="form-group" id="date-group">
+                    <label class="form-label" for="date-input">Change Date</label>
                     <input type="text" class="form-control" id="date-input" placeholder="e.g. 15/11/2026 (Leave blank for original)">
-                    <span class="form-hint">Format: DD/MM/YYYY. Preserves original invoice time.</span>
+                    <span class="form-hint" id="date-hint">Format: DD/MM/YYYY. Preserves time.</span>
                 </div>
             </div>
             <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-color);">
@@ -393,6 +399,7 @@ HTML_TEMPLATE = """
 
             const hypo = document.getElementById('hypo-select').value;
             const dateVal = document.getElementById('date-input').value.trim();
+            const snoVal = document.getElementById('sno-input') ? document.getElementById('sno-input').value.trim() : '';
 
             btn.disabled = true;
             progressBox.style.display = 'block';
@@ -402,6 +409,7 @@ HTML_TEMPLATE = """
 
             const formData = new FormData();
             formData.append('doc_mode', currentMode);
+            formData.append('sno', snoVal);
             formData.append('hypothecation', hypo);
             formData.append('new_date', dateVal);
             const affixStamp = document.getElementById('stamp-checkbox') ? document.getElementById('stamp-checkbox').checked : true;
@@ -440,9 +448,18 @@ HTML_TEMPLATE = """
             const list = document.getElementById('results-list');
 
             resultsBox.style.display = 'block';
-            summary.innerText = `Converted ${data.files.length} document(s) successfully!`;
-            btnZip.href = `/api/download-zip?token=${data.token}`;
-            btnZip.style.display = data.files.length > 1 ? 'inline-flex' : 'none';
+            const snoClean = (data.sno || (document.getElementById('sno-input') ? document.getElementById('sno-input').value.trim() : '')).replace(/[<>:"/\\\\|?*]/g, '').trim();
+
+            if (snoClean) {
+                summary.innerText = `Converted ${data.files.length} document(s) for S.No. ${snoClean} successfully!`;
+                btnZip.innerText = `📦 Download All as ZIP (${snoClean}.zip / Folder: ${snoClean})`;
+                btnZip.href = `/api/download-zip?token=${data.token}&sno=${encodeURIComponent(snoClean)}`;
+            } else {
+                summary.innerText = `Converted ${data.files.length} document(s) successfully!`;
+                btnZip.innerText = '📦 Download All as ZIP';
+                btnZip.href = `/api/download-zip?token=${data.token}`;
+            }
+            btnZip.style.display = data.files.length >= 1 ? 'inline-flex' : 'none';
 
             list.innerHTML = data.files.map(f => {
                 let typeTag = '<span class="result-type-tag tag-inv">Tax Invoice</span>';
@@ -459,11 +476,14 @@ HTML_TEMPLATE = """
                         ? `<span style="font-size:11px; background:#f1f5f9; color:#1e293b; padding:2px 6px; border-radius:4px; margin-left:6px; font-weight:600;">🖨️ B&W Scan</span>` 
                         : `<span style="font-size:11px; background:#fef3c7; color:#854d0e; padding:2px 6px; border-radius:4px; margin-left:6px; font-weight:600;">📄 Color Scan</span>`) 
                     : '';
+                const folderBadge = snoClean 
+                    ? `<span style="font-size:11px; background:#fef3c7; color:#b45309; padding:2px 6px; border-radius:4px; margin-left:6px; font-weight:600;">📁 ${snoClean}/</span>` 
+                    : '';
 
                 return `
                 <div class="result-item">
                     <div>
-                        <div>${typeTag}<strong>${f.converted_name}</strong>${sizeBadge}${scanBadge}</div>
+                        <div>${typeTag}<strong>${f.converted_name}</strong>${sizeBadge}${scanBadge}${folderBadge}</div>
                         <div style="font-size: 11px; color: var(--text-muted); margin-top: 3px;">
                             ${f.doc_type === 'form_22' ? 'Dealer stamp affixed in blank area (strictly < 280 KB)' : `Headers replaced: ${f.headers_replaced} | Signatory replaced: ${f.footers_replaced}`}
                         </div>
@@ -508,6 +528,8 @@ def api_convert():
         return jsonify({'error': 'No files uploaded'}), 400
 
     uploaded_files = request.files.getlist('files')
+    sno = request.form.get('sno', '').strip()
+    sno_clean = re.sub(r'[<>:"/\\|?*]', '', sno).strip() if sno else ''
     hypothecation = request.form.get('hypothecation', 'KEEP_ORIGINAL')
     new_date = request.form.get('new_date', '').strip()
     affix_stamp = request.form.get('affix_stamp', 'true').lower() == 'true'
@@ -580,10 +602,14 @@ def api_convert():
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
-    CONVERTED_STORE[batch_token] = token_files
+    CONVERTED_STORE[batch_token] = {
+        'files': token_files,
+        'sno': sno_clean
+    }
 
     return jsonify({
         'token': batch_token,
+        'sno': sno_clean,
         'files': converted_files
     })
 
@@ -618,23 +644,34 @@ def preview_file(file_id):
 @app.route('/api/download-zip')
 def download_zip():
     token = request.args.get('token')
-    file_ids = CONVERTED_STORE.get(token)
-    if not file_ids:
+    batch_data = CONVERTED_STORE.get(token)
+    if not batch_data:
         return "Batch not found", 404
+
+    if isinstance(batch_data, dict):
+        file_ids = batch_data.get('files', [])
+        sno = batch_data.get('sno', '') or request.args.get('sno', '').strip()
+    else:
+        file_ids = batch_data
+        sno = request.args.get('sno', '').strip()
+
+    sno_clean = re.sub(r'[<>:"/\\|?*]', '', sno).strip() if sno else ''
+    folder_prefix = f"{sno_clean}/" if sno_clean else ""
 
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
         for fid in file_ids:
             item = CONVERTED_STORE.get(fid)
             if item:
-                zip_file.writestr(item['filename'], item['data'])
+                zip_file.writestr(f"{folder_prefix}{item['filename']}", item['data'])
 
     zip_buffer.seek(0)
+    zip_name = f"{sno_clean}.zip" if sno_clean else 'converted_annapurna_documents.zip'
     return send_file(
         zip_buffer,
         mimetype='application/zip',
         as_attachment=True,
-        download_name='converted_annapurna_documents.zip'
+        download_name=zip_name
     )
 
 
