@@ -56,13 +56,16 @@ def get_stamp_path() -> str:
     return None
 
 
-def affix_dealer_stamp_invoice(page: fitz.Page, stamp_path: str = None) -> bool:
-    """Affix authentic Annapurna Motors circular rubber stamp and signature onto Tax Invoice, overlapping both For ANNAPURNA MOTORS and Authorized Signatory."""
+def affix_dealer_stamp_invoice(page: fitz.Page, stamp_path: str = None, dealer_y: float = 636.5) -> bool:
+    """Affix authentic Annapurna Motors circular rubber stamp and signature onto Tax Invoice,
+    dynamically positioned between For ANNAPURNA MOTORS and Authorized Signatory."""
     path = stamp_path or get_stamp_path()
     if not path or not os.path.exists(path):
         return False
-    # Tax Invoice: precisely overlays both 'For ANNAPURNA MOTORS' (at y=646) and 'Authorized Signatory' (at y=684)
-    rect = fitz.Rect(436.0, 626.0, 534.0, 718.0)
+    # Tax Invoice: dynamically positioned relative to dealer_y so it cleanly bridges
+    # 'For ANNAPURNA MOTORS' (at dealer_y) and 'Authorized Signatory' (at dealer_y + 47)
+    stamp_y = dealer_y - 10.5
+    rect = fitz.Rect(436.0, stamp_y, 534.0, stamp_y + 92.0)
     page.insert_image(rect, filename=path, keep_proportion=True)
     return True
 
@@ -355,72 +358,84 @@ def convert_invoice(doc: fitz.Document, hypothecation: str = None, new_date: str
     sig_page_idx = invoice_page_indices[-1]
     for p_idx in invoice_page_indices:
         p = doc[p_idx]
-        if len(p.search_for("Authorized Signatory")) > 0 or any(h.x0 > 380 and h.y0 > 200 for h in p.search_for("Signatory")):
+        if any(h.x0 > 380 and h.y0 > 150 for h in (p.search_for("Signatory") + p.search_for("Authorized"))):
             sig_page_idx = p_idx
             break
 
     sig_page = doc[sig_page_idx]
 
-    # Locate Authorized Signatory accurately
-    auth_hits = sig_page.search_for("Authorized Signatory")
-    if not auth_hits:
-        auth_hits = [h for h in sig_page.search_for("Signatory") if h.x0 > 380 and h.y0 > 200]
+    # Robust multi-anchor detection for dealer line and Authorized Signatory
+    dealer_y = None
+    auth_y = None
 
-    y_auth = auth_hits[0].y0 if auth_hits else None
+    # Anchor 1: Search for 'Signatory' or 'Authorized' on the right side
+    for h in (sig_page.search_for("Signatory") + sig_page.search_for("Authorized")):
+        if h.x0 > 380 and h.y0 > 150:
+            auth_y = h.y0
+            dealer_y = h.y0 - 47.0
+            break
 
-    # Locate Shanti Motors in the signature block (right side, lower half)
-    shanti_sig_hits = []
-    for term in ["SHANTI MOTORS", "Shanti Motors", "shanti motors", "M/S.SHANTI", "M/s.Shanti", "For M/S", "For M/s", "For  M"]:
-        for h in sig_page.search_for(term):
-            if h.y0 > 200 and h.x0 > 380:
-                shanti_sig_hits.append(h)
+    # Anchor 2: Search for Dealer name in signature block
+    if dealer_y is None:
+        for term in ["SHANTI MOTORS", "Shanti Motors", "shanti motors", "M/S.SHANTI", "M/s.Shanti", "For M/S", "For M/s", "For  M"]:
+            hits = [h for h in sig_page.search_for(term) if h.x0 > 380 and h.y0 > 150]
+            if hits:
+                dealer_y = hits[0].y0
+                auth_y = dealer_y + 47.0
+                break
 
-    # Redact Shanti Motors in signature: strictly bounded so y >= y_auth - 3 is NEVER touched!
-    for h in shanti_sig_hits:
-        bottom_lim = (y_auth - 3.0) if y_auth else (h.y1 + 3.0)
-        sig_page.add_redact_annot(fitz.Rect(420.0, h.y0 - 2.0, 585.0, min(h.y1 + 2.0, bottom_lim)), fill=(1, 1, 1))
+    # Anchor 3: Search for 'Customer\'s Signatures' on the left side (same vertical level as dealer line)
+    if dealer_y is None:
+        for h in sig_page.search_for("Customer's Signatures"):
+            if h.y0 > 150:
+                dealer_y = h.y0
+                auth_y = dealer_y + 47.0
+                break
 
-    if not shanti_sig_hits:
-        if y_auth:
-            # Dealer line sits strictly 35 to 45 pt above Authorized Signatory
-            sig_page.add_redact_annot(fitz.Rect(430.0, y_auth - 48.0, 585.0, y_auth - 34.0), fill=(1, 1, 1))
-        else:
-            # Fallback standard line
-            sig_page.add_redact_annot(fitz.Rect(430.0, 630.0, 585.0, 655.0), fill=(1, 1, 1))
+    # Fallback to standard Hero template baselines if text is unindexed
+    if dealer_y is None:
+        dealer_y = 636.5 if sig_page_idx == 0 else 215.0
+        auth_y = dealer_y + 47.0
 
+    # Redact Shanti Motors: bounded tightly (dealer_y - 3.0 to dealer_y + 13.0)
+    # This leaves 34 pt of untouched space above Authorized Signatory!
+    sig_page.add_redact_annot(fitz.Rect(420.0, dealer_y - 3.0, 585.0, dealer_y + 13.0), fill=(1, 1, 1))
     sig_page.apply_redactions()
 
     # Draw For ANNAPURNA MOTORS
     footer_text = cfg["footer_signatory"]
     text_len = fitz.get_text_length(footer_text, fontname="helv", fontsize=9.0)
     target_x = max(28.35, 577.05 - text_len)
-    dealer_y = (y_auth - 38.0) if y_auth else (647.5 if sig_page_idx == 0 else 226.0)
-    sig_page.insert_text((target_x, dealer_y), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
+    sig_page.insert_text((target_x, dealer_y + 9.5), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
     footers_replaced += 1
 
     # CRITICAL SELF-HEALING: Verify that Authorized Signatory is 100% present on the signature page!
-    auth_check = sig_page.search_for("Authorized Signatory")
+    auth_check = [h for h in sig_page.search_for("Signatory") if h.x0 > 380 and h.y0 > 150]
     if not auth_check:
         auth_text = "Authorized Signatory"
         auth_len = fitz.get_text_length(auth_text, fontname="helv", fontsize=9.0)
         auth_x = max(28.35, 577.05 - auth_len)
-        auth_y = (y_auth + 12.0) if y_auth else (dealer_y + 38.0)
-        sig_page.insert_text((auth_x, auth_y), auth_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
+        sig_page.insert_text((auth_x, auth_y + 9.5), auth_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
 
     # 4. Affix Authentic Stamp & Signature
     if affix_stamp:
-        stamp_affixed = affix_dealer_stamp_invoice(sig_page)
+        stamp_affixed = affix_dealer_stamp_invoice(sig_page, dealer_y=dealer_y)
 
     # 5. Remove Terms & Conditions pages, keeping all actual invoice pages
     for i in range(len(doc) - 1, -1, -1):
         if i not in invoice_page_indices:
             doc.delete_page(i)
 
+    # In case pages were deleted before sig_page_idx, adjust sig_page_idx
+    final_sig_page_idx = invoice_page_indices.index(sig_page_idx) if sig_page_idx in invoice_page_indices else 0
+
     return {
         "doc_type": "invoice",
         "headers_replaced": headers_replaced,
         "footers_replaced": footers_replaced,
-        "stamp_affixed": stamp_affixed
+        "stamp_affixed": stamp_affixed,
+        "sig_page_idx": final_sig_page_idx,
+        "dealer_y": dealer_y
     }
 
 
@@ -539,7 +554,8 @@ def apply_scanned_effect(doc: fitz.Document, bw_mode: bool = True, stamp_info: d
             im_proc = Image.fromarray(arr, mode="L").convert("RGBA")
 
             # 2. Affix authentic blue rubber seal & signature ON TOP of the B&W printout
-            if idx == 0 and stamp_info and stamp_img:
+            target_page_idx = stamp_info.get("page", 0) if stamp_info else 0
+            if idx == target_page_idx and stamp_info and stamp_img:
                 scale = 150.0 / 72.0
                 sw = int(stamp_info["width"] * scale)
                 sh = int(stamp_info["height"] * scale)
@@ -591,8 +607,15 @@ def convert_document(input_path: str, output_path: str, hypothecation: str = Non
         stats = convert_sale_certificate(doc, hypothecation=hypothecation, new_date=new_date, affix_stamp=affix_stamp)
         stamp_info = {"x": 440.0, "y": 600.0, "width": 74.0, "height": 68.0} if affix_stamp else None
     else:
-        stats = convert_invoice(doc, hypothecation=hypothecation, new_date=new_date, affix_stamp=affix_stamp)
-        stamp_info = {"x": 436.0, "y": 626.0, "width": 98.0, "height": 92.0} if affix_stamp else None
+        # In scanned effect mode, do not pre-affix vector stamp because apply_scanned_effect affixes it in color
+        stats = convert_invoice(doc, hypothecation=hypothecation, new_date=new_date, affix_stamp=(not scanned_effect and affix_stamp))
+        stamp_info = {
+            "page": stats.get("sig_page_idx", 0),
+            "x": 436.0,
+            "y": stats.get("dealer_y", 636.5) - 10.5,
+            "width": 98.0,
+            "height": 92.0
+        } if affix_stamp else None
 
     # Apply scanned effect (B&W laser print filter applied FIRST, then stamp affixed on top in color)
     if scanned_effect:

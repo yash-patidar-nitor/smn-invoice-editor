@@ -103,7 +103,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <span class="badge">Shanti Motors ➔ Annapurna Motors • v2.9.7 Robust Multi-Page Invoicing &amp; Signatory Protection</span>
+            <span class="badge">Shanti Motors ➔ Annapurna Motors • v2.9.8 Bulletproof Multi-Template Invoicing &amp; Signatory Protection</span>
             <h1 class="title">Hero Document Converter</h1>
             <p class="subtitle">Pixel-perfect conversion for Hero MotoCorp Invoices, Form 21 Sale Certificates & Form 22</p>
         </div>
@@ -420,7 +420,8 @@
 
                     // 3. Affix authentic Rubber Seal & Signature ON TOP of the B&W printout!
                     // It overlays in full original blue/purple color, exactly like physical ink stamped on paper!
-                    if (p === 1 && stampInfo && stampImgElement) {
+                    const targetStampPage = (stampInfo && typeof stampInfo.pageIndex === 'number') ? (stampInfo.pageIndex + 1) : 1;
+                    if (p === targetStampPage && stampInfo && stampImgElement) {
                         srcCtx.drawImage(
                             stampImgElement,
                             stampInfo.x * scale,
@@ -724,7 +725,9 @@
 
             // 1. Inspect all pages with PDF.js to identify Terms & Conditions vs Invoice Content pages
             let nonTermsPageIndices = [];
-            let pageAuthPositions = {}; // pageIndex -> { x, baselineY (bottom-up) }
+            let sigPageIndex = -1;
+            let detectedDealerY = null;
+            let detectedAuthY = null;
 
             if (typeof pdfjsLib !== 'undefined') {
                 try {
@@ -746,16 +749,53 @@
                             nonTermsPageIndices.push(p - 1);
                         }
 
-                        // Search for Authorized Signatory on this page
-                        for (let i = 0; i < textContent.items.length; i++) {
-                            const it = textContent.items[i];
-                            const s = (it.str || '').toLowerCase();
-                            if (s.includes('authorized signatory') || (s.includes('signatory') && it.transform[4] > 380 && it.transform[5] < 300)) {
-                                pageAuthPositions[p - 1] = {
-                                    x: it.transform[4],
-                                    baselineY: it.transform[5]
-                                };
-                                break;
+                        // Inspect non-terms page for signature block
+                        if (!isTerms && sigPageIndex === -1) {
+                            const pHeight = page.getViewport({ scale: 1.0 }).height;
+
+                            // Priority 1: Check for 'Signatory' or 'Authorized' on right side (x > 380)
+                            for (let i = 0; i < textContent.items.length; i++) {
+                                const it = textContent.items[i];
+                                const s = (it.str || '').toLowerCase();
+                                const x = it.transform[4];
+                                const topY = pHeight - it.transform[5];
+                                if ((s.includes('signatory') || s.includes('authorized')) && x > 380 && topY > 150) {
+                                    sigPageIndex = p - 1;
+                                    detectedAuthY = topY;
+                                    detectedDealerY = topY - 47.0;
+                                    break;
+                                }
+                            }
+
+                            // Priority 2: Check for Dealer name in signature block
+                            if (sigPageIndex === -1) {
+                                for (let i = 0; i < textContent.items.length; i++) {
+                                    const it = textContent.items[i];
+                                    const s = (it.str || '').toLowerCase();
+                                    const x = it.transform[4];
+                                    const topY = pHeight - it.transform[5];
+                                    if ((s.includes('shanti') || s.includes('annapurna') || s.includes('for m/')) && x > 380 && topY > 150) {
+                                        sigPageIndex = p - 1;
+                                        detectedDealerY = topY;
+                                        detectedAuthY = topY + 47.0;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            // Priority 3: Check for Customer's Signatures on left side (same vertical line)
+                            if (sigPageIndex === -1) {
+                                for (let i = 0; i < textContent.items.length; i++) {
+                                    const it = textContent.items[i];
+                                    const s = (it.str || '').toLowerCase();
+                                    const topY = pHeight - it.transform[5];
+                                    if (s.includes('signatures') && topY > 150) {
+                                        sigPageIndex = p - 1;
+                                        detectedDealerY = topY;
+                                        detectedAuthY = topY + 47.0;
+                                        break;
+                                    }
+                                }
                             }
                         }
                     }
@@ -767,6 +807,13 @@
             // Fallback if inspection didn't find any non-terms pages
             if (nonTermsPageIndices.length === 0) {
                 nonTermsPageIndices = [0];
+            }
+            if (sigPageIndex === -1 || !nonTermsPageIndices.includes(sigPageIndex)) {
+                sigPageIndex = nonTermsPageIndices[nonTermsPageIndices.length - 1];
+            }
+            if (detectedDealerY === null) {
+                detectedDealerY = (sigPageIndex === 0) ? 636.5 : 215.0;
+                detectedAuthY = detectedDealerY + 47.0;
             }
 
             // 2. Process Page 0: Header, Date, Hypothecation
@@ -816,70 +863,62 @@
                 }
             }
 
-            // 3. Process Signatory Block
-            // Identify which page has the signature (last non-terms page or page with auth position)
-            let sigPageIndex = nonTermsPageIndices[nonTermsPageIndices.length - 1];
-            for (const idx of nonTermsPageIndices) {
-                if (pageAuthPositions[idx]) {
-                    sigPageIndex = idx;
-                    break;
-                }
-            }
-
+            // 3. Process Signatory Block on sigPage
             if (sigPageIndex < pages.length) {
                 const sigPage = pages[sigPageIndex];
                 const pageHeight = sigPage.getHeight();
-                const authPos = pageAuthPositions[sigPageIndex];
 
+                // 1. Redact ONLY the dealer line band (detectedDealerY - 3.0 to detectedDealerY + 13.0)
+                // Leaves 34 pt untouched gap above Authorized Signatory so it is NEVER clipped!
+                sigPage.drawRectangle({
+                    x: 420.0,
+                    y: pageHeight - (detectedDealerY + 13.0),
+                    width: 165.0,
+                    height: 16.0,
+                    color: PDFLib.rgb(1, 1, 1)
+                });
+
+                // 2. Draw For ANNAPURNA MOTORS
                 const invFooterText = 'For ANNAPURNA MOTORS';
                 const invLen = helv.widthOfTextAtSize(invFooterText, 9);
                 const targetX = Math.max(28.35, 577.05 - invLen);
+                sigPage.drawText(invFooterText, {
+                    x: targetX,
+                    y: pageHeight - (detectedDealerY + 9.5),
+                    size: 9,
+                    font: helv
+                });
 
-                if (authPos) {
-                    // Authorized Signatory was found at authPos.baselineY (bottom-up coordinates)
-                    // Dealer line sits ~38 pt ABOVE Authorized Signatory in bottom-up coordinates
-                    const dealerBaselineY = authPos.baselineY + 38.0;
+                // 3. CRITICAL SELF-HEALING: Guarantee Authorized Signatory is 100% present and crisp!
+                // Redact old signatory line band if any stray text exists
+                sigPage.drawRectangle({
+                    x: 420.0,
+                    y: pageHeight - (detectedAuthY + 13.0),
+                    width: 165.0,
+                    height: 16.0,
+                    color: PDFLib.rgb(1, 1, 1)
+                });
+                const authText = 'Authorized Signatory';
+                const authLen = helv.widthOfTextAtSize(authText, 9);
+                const authX = Math.max(28.35, 577.05 - authLen);
+                sigPage.drawText(authText, {
+                    x: authX,
+                    y: pageHeight - (detectedAuthY + 9.5),
+                    size: 9,
+                    font: helv
+                });
 
-                    // Redact ONLY the dealer line band (never touches Authorized Signatory!)
-                    sigPage.drawRectangle({
-                        x: 420.0,
-                        y: dealerBaselineY - 3.0,
-                        width: 165.0,
-                        height: 16.0,
-                        color: PDFLib.rgb(1, 1, 1)
-                    });
-
-                    // Draw For ANNAPURNA MOTORS
-                    sigPage.drawText(invFooterText, { x: targetX, y: dealerBaselineY, size: 9, font: helv });
-                } else {
-                    // Fallback if no text position found: use standard top-down baseline
-                    const dealerTopY = (sigPageIndex === 0) ? 646.0 : 226.0;
-                    sigPage.drawRectangle({
-                        x: 420.0,
-                        y: pageHeight - dealerTopY - 3.0,
-                        width: 165.0,
-                        height: 16.0,
-                        color: PDFLib.rgb(1, 1, 1)
-                    });
-                    sigPage.drawText(invFooterText, { x: targetX, y: pageHeight - dealerTopY, size: 9, font: helv });
-
-                    // Draw Authorized Signatory below it to guarantee it is NEVER missing!
-                    const authText = 'Authorized Signatory';
-                    const authLen = helv.widthOfTextAtSize(authText, 9);
-                    const authX = Math.max(28.35, 577.05 - authLen);
-                    sigPage.drawText(authText, { x: authX, y: pageHeight - (dealerTopY + 38.0), size: 9, font: helv });
-                }
-
-                // 5. Affix Authentic Stamp & Signature
-                const stampInfo = affixStamp ? { x: 436.0, y: (sigPageIndex === 0 ? 626.0 : 206.0), width: 98.0, height: 92.0 } : null;
-                if (!scannedLook && stampInfo && typeof STAMP_BASE64 !== 'undefined' && STAMP_BASE64) {
+                // 4. If scannedLook is disabled, embed authentic vector stamp directly on sigPage
+                if (!scannedLook && affixStamp && typeof STAMP_BASE64 !== 'undefined' && STAMP_BASE64) {
                     try {
                         const stampImg = await pdfDoc.embedPng('data:image/png;base64,' + STAMP_BASE64);
+                        const stampTopY = detectedDealerY - 10.5;
+                        const stampHeight = 92.0;
                         sigPage.drawImage(stampImg, {
-                            x: stampInfo.x,
-                            y: pageHeight - (stampInfo.y + stampInfo.height),
-                            width: stampInfo.width,
-                            height: stampInfo.height
+                            x: 436.0,
+                            y: pageHeight - (stampTopY + stampHeight),
+                            width: 98.0,
+                            height: stampHeight
                         });
                     } catch(e) {
                         console.error('Failed to overlay stamp on invoice:', e);
@@ -897,8 +936,18 @@
             let modifiedPdfBytes = await cleanDoc.save();
             const outPagesCount = cleanDoc.getPageCount();
 
+            // Locate final index of the signature page in the cleaned document
+            const newSigPageIndex = nonTermsPageIndices.indexOf(sigPageIndex);
+            const finalSigPageIndex = newSigPageIndex !== -1 ? newSigPageIndex : 0;
+
             if (scannedLook) {
-                const invoiceStampInfo = affixStamp ? { x: 436.0, y: 626.0, width: 98.0, height: 92.0 } : null;
+                const invoiceStampInfo = affixStamp ? {
+                    pageIndex: finalSigPageIndex,
+                    x: 436.0,
+                    y: detectedDealerY - 10.5,
+                    width: 98.0,
+                    height: 92.0
+                } : null;
                 modifiedPdfBytes = await applyScannedLook(modifiedPdfBytes, bwMode, outPagesCount, invoiceStampInfo);
             } else {
                 modifiedPdfBytes = await ensureStrictlyUnder280KB(modifiedPdfBytes, outPagesCount);

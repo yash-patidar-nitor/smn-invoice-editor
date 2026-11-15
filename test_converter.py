@@ -334,7 +334,8 @@ def test_invoice_authorized_signatory_robustness():
     test_files = [
         r"c:\Users\yash.patidar\Downloads\smn.pdf",
         r"c:\Users\yash.patidar\Downloads\Ann.pdf",
-        r"c:\Users\yash.patidar\.gemini\antigravity\brain\d343b39a-56a2-4ef7-aba9-92463e5a405d\.user_uploaded\media_1794501918315.pdf"
+        r"c:\Users\yash.patidar\.gemini\antigravity\brain\d343b39a-56a2-4ef7-aba9-92463e5a405d\.user_uploaded\media_1794501918315.pdf",
+        os.path.abspath(r"..\HeroMotoCorp_Downloads\MBLHAW471THEB1423\63502BK26S410_GST Retail Invoice.pdf")
     ]
 
     for inv_path in test_files:
