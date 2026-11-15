@@ -103,7 +103,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <span class="badge">Shanti Motors ➔ Annapurna Motors • v2.9.5 S.No. Batch &amp; Pristine Sale Certificate</span>
+            <span class="badge">Shanti Motors ➔ Annapurna Motors • v2.9.6 Dynamic Body Date &amp; Pristine Invoicing</span>
             <h1 class="title">Hero Document Converter</h1>
             <p class="subtitle">Pixel-perfect conversion for Hero MotoCorp Invoices, Form 21 Sale Certificates & Form 22</p>
         </div>
@@ -696,6 +696,20 @@
             renderResults();
         }
 
+        function normalizeDateString(dateStr) {
+            if (!dateStr || !dateStr.trim()) return '';
+            const trimmed = dateStr.trim();
+            const mSlashHyphen = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+            if (mSlashHyphen) {
+                return `${mSlashHyphen[1].padStart(2, '0')}/${mSlashHyphen[2].padStart(2, '0')}/${mSlashHyphen[3]}`;
+            }
+            const mIso = trimmed.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/);
+            if (mIso) {
+                return `${mIso[3].padStart(2, '0')}/${mIso[2].padStart(2, '0')}/${mIso[1]}`;
+            }
+            return trimmed;
+        }
+
         /**
          * Dedicated Tax Invoice Converter
          * Strictly isolates all replacements to Page 0.
@@ -729,6 +743,7 @@
                 // 2. Date in Invoice (Page 0 only)
                 // Strictly between y=223.5 and 234.5 from top, so Invoice # (at y<=223.0) is NEVER truncated!
                 if (newDate && newDate.trim()) {
+                    const cleanDate = normalizeDateString(newDate);
                     page.drawRectangle({
                         x: 478.0,
                         y: pageHeight - 234.5,
@@ -736,7 +751,7 @@
                         height: 11.0,
                         color: PDFLib.rgb(1, 1, 1)
                     });
-                    page.drawText(' ' + newDate.trim(), { x: 479.8, y: pageHeight - 232.17, size: 9, font: helv });
+                    page.drawText(' ' + cleanDate, { x: 479.8, y: pageHeight - 232.17, size: 9, font: helv });
                 }
 
                 // 3. Hypothecation in Invoice (Page 0 only)
@@ -868,29 +883,78 @@
                 page.drawText('KUKSHI DHAR MADHYA PRADESH 454331 Contact# 9755820013', { x: 56.7, y: pageHeight - 57.0, size: 9, font: helv });
                 page.drawText('Authorized Dealer: Hero MotoCorp Ltd.', { x: 56.7, y: pageHeight - 68.0, size: 9, font: helvBold });
 
-                // 2. Top Right Date: strictly y=121.0 to 133.0
+                // 2. Date in Sale Certificate
                 if (newDate && newDate.trim()) {
-                    const m = newDate.match(/\d{2}\/\d{2}\/\d{4}/);
-                    const cleanDate = m ? m[0] : newDate.trim();
+                    const cleanDate = normalizeDateString(newDate);
 
+                    // Top Right Date: strictly y=120.0 to 134.0 from top
                     page.drawRectangle({
                         x: 510.0,
-                        y: pageHeight - 133.0,
+                        y: pageHeight - 134.0,
                         width: 72.0,
-                        height: 12.0,
+                        height: 14.0,
                         color: PDFLib.rgb(1, 1, 1)
                     });
                     page.drawText('  ' + cleanDate, { x: 512.1, y: pageHeight - 130.19, size: 9, font: helv });
 
-                    // Body clause date: strictly y=190.0 to 200.0, x=64.0 to 115.0
-                    page.drawRectangle({
-                        x: 64.0,
-                        y: pageHeight - 200.0,
-                        width: 52.0,
-                        height: 10.0,
-                        color: PDFLib.rgb(1, 1, 1)
-                    });
-                    page.drawText(cleanDate, { x: 65.7, y: pageHeight - 197.83, size: 9, font: helv });
+                    // Dynamic Body Date: locate delivery date without clipping Invoice # or surrounding lines
+                    let bodyDatePos = null;
+                    if (typeof pdfjsLib !== 'undefined') {
+                        try {
+                            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                            const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer.slice(0) });
+                            const pdfJsDoc = await loadingTask.promise;
+                            const page1 = await pdfJsDoc.getPage(1);
+                            const textContent = await page1.getTextContent();
+
+                            // In PDF.js: ty is baseline in bottom-up coordinates.
+                            // Delivery clause baseline ty is strictly between 585 and 615 pt.
+                            for (let i = 0; i < textContent.items.length; i++) {
+                                const item = textContent.items[i];
+                                const str = item.str || '';
+                                const tx = item.transform[4];
+                                const ty = item.transform[5];
+
+                                if (ty >= 585 && ty <= 615) {
+                                    const dateRegex = /\b(\d{2}[/-]\d{2}[/-]\d{4})\b/;
+                                    const m = str.match(dateRegex);
+                                    if (m) {
+                                        const matchedDate = m[1];
+                                        const dateIdx = str.indexOf(matchedDate);
+                                        const prefix = str.substring(0, dateIdx);
+                                        const prefixWidth = helv.widthOfTextAtSize(prefix, 9);
+                                        const dateWidth = helv.widthOfTextAtSize(matchedDate, 9);
+                                        bodyDatePos = {
+                                            x: tx + prefixWidth,
+                                            baselineY: ty,
+                                            width: dateWidth
+                                        };
+                                        break;
+                                    }
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('PDF.js dynamic body date detection error:', e);
+                        }
+                    }
+
+                    if (bodyDatePos) {
+                        // Tight safe rect: baseline - 0.5 to baseline + 7.3.
+                        // Strictly erases the old digits while staying away from lines above and below (never clips Invoice #!)
+                        page.drawRectangle({
+                            x: bodyDatePos.x - 0.5,
+                            y: bodyDatePos.baselineY - 0.5,
+                            width: bodyDatePos.width + 1.0,
+                            height: 7.8,
+                            color: PDFLib.rgb(1, 1, 1)
+                        });
+                        page.drawText(cleanDate, {
+                            x: bodyDatePos.x,
+                            y: bodyDatePos.baselineY,
+                            size: 9,
+                            font: helv
+                        });
+                    }
                 }
 
                 // 3. Hypothecation: strictly y=357.0 to 369.0, x=320.0 to 530.0
