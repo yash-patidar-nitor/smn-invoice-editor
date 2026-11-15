@@ -103,7 +103,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <span class="badge">Shanti Motors ➔ Annapurna Motors • v2.9.4 S.No. Batch Folder &amp; Strict Single-Page</span>
+            <span class="badge">Shanti Motors ➔ Annapurna Motors • v2.9.5 S.No. Batch &amp; Pristine Sale Certificate</span>
             <h1 class="title">Hero Document Converter</h1>
             <p class="subtitle">Pixel-perfect conversion for Hero MotoCorp Invoices, Form 21 Sale Certificates & Form 22</p>
         </div>
@@ -908,27 +908,28 @@
                 }
 
                 // 4. Signatory in Sale Certificate
-                // Strictly erase ONLY the single line where 'For M/s.Shanti Motors' sits (y: 594.0 to 612.0 from top).
-                // DO NOT erase below y=612 so 'Authorized Signatory' (at y=658.7) is NEVER clipped or truncated!
+                // Blanket-redact the full signatory header band (y: 575.0 to 620.0 from top) on the right side (x: 425 to 585).
+                // This permanently guarantees that 'For M/s.Shanti Motors' (whether at y=580, 595, or 605) is 100% OBLITERATED,
+                // while leaving 38 pt safe margin above 'Authorized Signatory' (at y=658.7) so it is NEVER clipped!
                 page.drawRectangle({
-                    x: 430.0,
-                    y: pageHeight - 612.0,
-                    width: 155.0,
-                    height: 18.0,
+                    x: 425.0,
+                    y: pageHeight - 620.0,
+                    width: 160.0,
+                    height: 45.0,
                     color: PDFLib.rgb(1, 1, 1)
                 });
                 const scFooterText = 'For M/s.Annapurna Motors';
                 const scLen = helv.widthOfTextAtSize(scFooterText, 9);
-                page.drawText(scFooterText, { x: 570.0 - scLen, y: pageHeight - 605.0, size: 9, font: helv });
+                page.drawText(scFooterText, { x: 570.0 - scLen, y: pageHeight - 595.0, size: 9, font: helv });
 
                 // 5. Affix Authentic Stamp & Signature (Overlays cleanly in signature space between 'For M/s.Annapurna Motors' and 'Authorized Signatory')
-                const stampInfo = affixStamp ? { x: 435.0, y: 605.0, width: 80.0, height: 75.0 } : null;
+                const stampInfo = affixStamp ? { x: 440.0, y: 600.0, width: 74.0, height: 68.0 } : null;
                 if (!scannedLook && stampInfo && typeof STAMP_BASE64 !== 'undefined' && STAMP_BASE64) {
                     try {
                         const stampImg = await pdfDoc.embedPng('data:image/png;base64,' + STAMP_BASE64);
                         page.drawImage(stampImg, {
                             x: stampInfo.x,
-                            y: pageHeight - 680.0,
+                            y: pageHeight - 668.0,
                             width: stampInfo.width,
                             height: stampInfo.height
                         });
@@ -946,7 +947,7 @@
 
             let modifiedPdfBytes = await singlePageDoc.save();
             if (scannedLook) {
-                const scStampInfo = affixStamp ? { x: 435.0, y: 605.0, width: 80.0, height: 75.0 } : null;
+                const scStampInfo = affixStamp ? { x: 440.0, y: 600.0, width: 74.0, height: 68.0 } : null;
                 modifiedPdfBytes = await applyScannedLook(modifiedPdfBytes, bwMode, 1, scStampInfo);
             } else {
                 modifiedPdfBytes = await ensureStrictlyUnder280KB(modifiedPdfBytes, 1);
