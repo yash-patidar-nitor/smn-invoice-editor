@@ -72,8 +72,8 @@ def affix_dealer_stamp_sale_certificate(page: fitz.Page, stamp_path: str = None)
     path = stamp_path or get_stamp_path()
     if not path or not os.path.exists(path):
         return False
-    # Sale Certificate: positioned cleanly in signature space between 'For M/s.Annapurna Motors' (at y=605) and 'Authorized Signatory' (at y=668)
-    rect = fitz.Rect(435.0, 605.0, 515.0, 680.0)
+    # Sale Certificate: positioned cleanly in signature space between 'For M/s.Annapurna Motors' (at y=595) and 'Authorized Signatory' (at y=668)
+    rect = fitz.Rect(440.0, 600.0, 514.0, 668.0)
     page.insert_image(rect, filename=path, keep_proportion=True)
     return True
 
@@ -382,15 +382,15 @@ def convert_sale_certificate(doc: fitz.Document, hypothecation: str = None, new_
                 if h.y0 > 200 and h.x0 > 380:
                     page.add_redact_annot(fitz.Rect(430.0, h.y0 - 5, 585.0, h.y1 + 5), fill=(1, 1, 1))
 
-        # Redact the exact line where 'For M/s.Shanti Motors' sits (y: 592.0 to 612.0)
-        # Note: Do NOT redact 630.0-655.0 because Authorized Signatory is at 658.7
-        page.add_redact_annot(fitz.Rect(430.0, 592.0, 585.0, 612.0), fill=(1, 1, 1))
+        # Blanket-redact the full signatory header band (y: 575.0 to 620.0) so no residual Shanti Motors can ever leak
+        # Leaves 38 pt safety margin above Authorized Signatory at y=658.7
+        page.add_redact_annot(fitz.Rect(425.0, 575.0, 585.0, 620.0), fill=(1, 1, 1))
         page.apply_redactions()
 
         footer_text = cfg["footer_signatory"]
         text_len = fitz.get_text_length(footer_text, fontname="helv", fontsize=9.0)
         target_x = max(56.7, 570.0 - text_len)
-        page.insert_text((target_x, 605.0), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
+        page.insert_text((target_x, 595.0), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
         footers_replaced += 1
 
         # 5. Affix Authentic Stamp & Signature
@@ -530,15 +530,15 @@ def convert_document(input_path: str, output_path: str, hypothecation: str = Non
                         if h.y0 > 200 and h.x0 > 380:
                             page.add_redact_annot(fitz.Rect(430.0, h.y0 - 5, 585.0, h.y1 + 5), fill=(1, 1, 1))
 
-                # Redact ONLY the exact line where 'For M/s.Shanti Motors' sits (y: 592.0 to 612.0)
-                # Note: Do NOT redact 630.0-655.0 because Authorized Signatory is at 658.7
-                page.add_redact_annot(fitz.Rect(430.0, 592.0, 585.0, 612.0), fill=(1, 1, 1))
+                # Blanket-redact the full signatory header band (y: 575.0 to 620.0) so no residual Shanti Motors can ever leak
+                # Leaves 38 pt safety margin above Authorized Signatory at y=658.7
+                page.add_redact_annot(fitz.Rect(425.0, 575.0, 585.0, 620.0), fill=(1, 1, 1))
                 page.apply_redactions()
 
                 footer_text = ANNAPURNA_SC_CONFIG["footer_signatory"]
                 text_len = fitz.get_text_length(footer_text, fontname="helv", fontsize=9.0)
                 target_x = max(56.7, 570.0 - text_len)
-                page.insert_text((target_x, 605.0), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
+                page.insert_text((target_x, 595.0), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
                 footers_replaced += 1
 
                 if affix_stamp:
@@ -604,7 +604,7 @@ def convert_document(input_path: str, output_path: str, hypothecation: str = Non
         if is_invoice:
             stamp_info = {"x": 436.0, "y": 626.0, "width": 98.0, "height": 92.0}
         elif detected_type == "sale_certificate" or "sale_certificate" in types_found:
-            stamp_info = {"x": 435.0, "y": 605.0, "width": 80.0, "height": 75.0}
+            stamp_info = {"x": 440.0, "y": 600.0, "width": 74.0, "height": 68.0}
         elif detected_type == "form_22":
             stamp_info = {"x": 180.0, "y": 688.0, "width": 88.0, "height": 90.0}
         else:
