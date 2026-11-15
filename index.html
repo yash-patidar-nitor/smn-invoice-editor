@@ -103,7 +103,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <span class="badge">Shanti Motors ➔ Annapurna Motors • v2.9.6 Dynamic Body Date &amp; Pristine Invoicing</span>
+            <span class="badge">Shanti Motors ➔ Annapurna Motors • v2.9.7 Robust Multi-Page Invoicing &amp; Signatory Protection</span>
             <h1 class="title">Hero Document Converter</h1>
             <p class="subtitle">Pixel-perfect conversion for Hero MotoCorp Invoices, Form 21 Sale Certificates & Form 22</p>
         </div>
@@ -712,8 +712,9 @@
 
         /**
          * Dedicated Tax Invoice Converter
-         * Strictly isolates all replacements to Page 0.
-         * Exact non-truncating bounding boxes so Invoice # and Mobile # are 100% pristine.
+         * - Dynamically detects and drops ONLY Terms & Conditions pages.
+         * - Dynamically locates and protects 'Authorized Signatory'.
+         * - Self-healing: Guarantees 'Authorized Signatory' is NEVER missing.
          */
         async function convertInvoicePdf(arrayBuffer, fileName, hypo, newDate, affixStamp = true, scannedLook = true, bwMode = true) {
             const pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer);
@@ -721,83 +722,162 @@
             const helvBold = await pdfDoc.embedFont(PDFLib.StandardFonts.HelveticaBold);
             const pages = pdfDoc.getPages();
 
-            // CRITICAL: Only process Page 0 (Page 1 is Terms & Conditions and must NEVER be touched)
+            // 1. Inspect all pages with PDF.js to identify Terms & Conditions vs Invoice Content pages
+            let nonTermsPageIndices = [];
+            let pageAuthPositions = {}; // pageIndex -> { x, baselineY (bottom-up) }
+
+            if (typeof pdfjsLib !== 'undefined') {
+                try {
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer.slice(0) });
+                    const pdfJsDoc = await loadingTask.promise;
+                    const numP = pdfJsDoc.numPages;
+
+                    for (let p = 1; p <= numP; p++) {
+                        const page = await pdfJsDoc.getPage(p);
+                        const textContent = await page.getTextContent();
+                        const fullText = textContent.items.map(item => item.str).join(' ').toLowerCase();
+
+                        const isTerms = fullText.includes('terms & conditions') || 
+                                        fullText.includes('terms and conditions') || 
+                                        fullText.includes('kindly visit hmcl dealership');
+
+                        if (!isTerms) {
+                            nonTermsPageIndices.push(p - 1);
+                        }
+
+                        // Search for Authorized Signatory on this page
+                        for (let i = 0; i < textContent.items.length; i++) {
+                            const it = textContent.items[i];
+                            const s = (it.str || '').toLowerCase();
+                            if (s.includes('authorized signatory') || (s.includes('signatory') && it.transform[4] > 380 && it.transform[5] < 300)) {
+                                pageAuthPositions[p - 1] = {
+                                    x: it.transform[4],
+                                    baselineY: it.transform[5]
+                                };
+                                break;
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.warn('PDF.js invoice structure inspection error:', e);
+                }
+            }
+
+            // Fallback if inspection didn't find any non-terms pages
+            if (nonTermsPageIndices.length === 0) {
+                nonTermsPageIndices = [0];
+            }
+
+            // 2. Process Page 0: Header, Date, Hypothecation
             if (pages.length > 0) {
-                const page = pages[0];
-                const pageHeight = page.getHeight();
+                const page0 = pages[0];
+                const p0Height = page0.getHeight();
 
                 // 1. Header (Page 0 only)
-                page.drawRectangle({
+                page0.drawRectangle({
                     x: 26.0,
-                    y: pageHeight - 170.0,
+                    y: p0Height - 170.0,
                     width: 414.0,
                     height: 64.0,
                     color: PDFLib.rgb(1, 1, 1)
                 });
-                page.drawText('ANNAPURNA MOTORS', { x: 28.35, y: pageHeight - 120.5, size: 9, font: helvBold });
-                page.drawText('Khasra 193/1  Ward 15 Alirajpur Road', { x: 28.35, y: pageHeight - 131.0, size: 9, font: helv });
-                page.drawText('KUKSHI DHAR MADHYA PRADESH 454331 State Code: 23 Contact #     9755820013', { x: 28.35, y: pageHeight - 142.0, size: 9, font: helv });
-                page.drawText('Authorized Dealer: Hero MotoCorp Ltd.', { x: 28.35, y: pageHeight - 153.0, size: 9, font: helvBold });
-                page.drawText('GSTIN #: 23AFTPG6974R1ZE PAN# AFTPG6974R', { x: 28.35, y: pageHeight - 164.0, size: 9, font: helv });
+                page0.drawText('ANNAPURNA MOTORS', { x: 28.35, y: p0Height - 120.5, size: 9, font: helvBold });
+                page0.drawText('Khasra 193/1  Ward 15 Alirajpur Road', { x: 28.35, y: p0Height - 131.0, size: 9, font: helv });
+                page0.drawText('KUKSHI DHAR MADHYA PRADESH 454331 State Code: 23 Contact #     9755820013', { x: 28.35, y: p0Height - 142.0, size: 9, font: helv });
+                page0.drawText('Authorized Dealer: Hero MotoCorp Ltd.', { x: 28.35, y: p0Height - 153.0, size: 9, font: helvBold });
+                page0.drawText('GSTIN #: 23AFTPG6974R1ZE PAN# AFTPG6974R', { x: 28.35, y: p0Height - 164.0, size: 9, font: helv });
 
                 // 2. Date in Invoice (Page 0 only)
-                // Strictly between y=223.5 and 234.5 from top, so Invoice # (at y<=223.0) is NEVER truncated!
                 if (newDate && newDate.trim()) {
                     const cleanDate = normalizeDateString(newDate);
-                    page.drawRectangle({
+                    page0.drawRectangle({
                         x: 478.0,
-                        y: pageHeight - 234.5,
+                        y: p0Height - 234.5,
                         width: 95.0,
                         height: 11.0,
                         color: PDFLib.rgb(1, 1, 1)
                     });
-                    page.drawText(' ' + cleanDate, { x: 479.8, y: pageHeight - 232.17, size: 9, font: helv });
+                    page0.drawText(' ' + cleanDate, { x: 479.8, y: p0Height - 232.17, size: 9, font: helv });
                 }
 
                 // 3. Hypothecation in Invoice (Page 0 only)
-                // Strictly between y=338.0 and 348.8 from top, so Mobile # (at y<=337.5) is NEVER truncated!
                 if (hypo && hypo !== 'KEEP_ORIGINAL') {
-                    page.drawRectangle({
+                    page0.drawRectangle({
                         x: 125.0,
-                        y: pageHeight - 348.8,
+                        y: p0Height - 348.8,
                         width: 235.0,
                         height: 10.8,
                         color: PDFLib.rgb(1, 1, 1)
                     });
                     if (hypo !== 'BLANK') {
-                        page.drawText(hypo.trim(), { x: 132.30, y: pageHeight - 346.64, size: 9, font: helv });
+                        page0.drawText(hypo.trim(), { x: 132.30, y: p0Height - 346.64, size: 9, font: helv });
                     }
                 }
+            }
 
-                // 4. Signatory in Invoice (Page 0)
-                // Blanket-erase BOTH candidate signatory rows (590-615 and 630-655) on the right side (x: 430 to 585)
-                // to permanently ensure NO residual 'For M/S.SHANTI MOTORS' or duplicate text can EVER leak through!
-                page.drawRectangle({
-                    x: 430.0,
-                    y: pageHeight - 615.0,
-                    width: 155.0,
-                    height: 25.0,
-                    color: PDFLib.rgb(1, 1, 1)
-                });
-                page.drawRectangle({
-                    x: 430.0,
-                    y: pageHeight - 655.0,
-                    width: 155.0,
-                    height: 25.0,
-                    color: PDFLib.rgb(1, 1, 1)
-                });
+            // 3. Process Signatory Block
+            // Identify which page has the signature (last non-terms page or page with auth position)
+            let sigPageIndex = nonTermsPageIndices[nonTermsPageIndices.length - 1];
+            for (const idx of nonTermsPageIndices) {
+                if (pageAuthPositions[idx]) {
+                    sigPageIndex = idx;
+                    break;
+                }
+            }
+
+            if (sigPageIndex < pages.length) {
+                const sigPage = pages[sigPageIndex];
+                const pageHeight = sigPage.getHeight();
+                const authPos = pageAuthPositions[sigPageIndex];
+
                 const invFooterText = 'For ANNAPURNA MOTORS';
                 const invLen = helv.widthOfTextAtSize(invFooterText, 9);
-                page.drawText(invFooterText, { x: 577.05 - invLen, y: pageHeight - 646.0, size: 9, font: helv });
+                const targetX = Math.max(28.35, 577.05 - invLen);
+
+                if (authPos) {
+                    // Authorized Signatory was found at authPos.baselineY (bottom-up coordinates)
+                    // Dealer line sits ~38 pt ABOVE Authorized Signatory in bottom-up coordinates
+                    const dealerBaselineY = authPos.baselineY + 38.0;
+
+                    // Redact ONLY the dealer line band (never touches Authorized Signatory!)
+                    sigPage.drawRectangle({
+                        x: 420.0,
+                        y: dealerBaselineY - 3.0,
+                        width: 165.0,
+                        height: 16.0,
+                        color: PDFLib.rgb(1, 1, 1)
+                    });
+
+                    // Draw For ANNAPURNA MOTORS
+                    sigPage.drawText(invFooterText, { x: targetX, y: dealerBaselineY, size: 9, font: helv });
+                } else {
+                    // Fallback if no text position found: use standard top-down baseline
+                    const dealerTopY = (sigPageIndex === 0) ? 646.0 : 226.0;
+                    sigPage.drawRectangle({
+                        x: 420.0,
+                        y: pageHeight - dealerTopY - 3.0,
+                        width: 165.0,
+                        height: 16.0,
+                        color: PDFLib.rgb(1, 1, 1)
+                    });
+                    sigPage.drawText(invFooterText, { x: targetX, y: pageHeight - dealerTopY, size: 9, font: helv });
+
+                    // Draw Authorized Signatory below it to guarantee it is NEVER missing!
+                    const authText = 'Authorized Signatory';
+                    const authLen = helv.widthOfTextAtSize(authText, 9);
+                    const authX = Math.max(28.35, 577.05 - authLen);
+                    sigPage.drawText(authText, { x: authX, y: pageHeight - (dealerTopY + 38.0), size: 9, font: helv });
+                }
 
                 // 5. Affix Authentic Stamp & Signature
-                const stampInfo = affixStamp ? { x: 436.0, y: 626.0, width: 98.0, height: 92.0 } : null;
+                const stampInfo = affixStamp ? { x: 436.0, y: (sigPageIndex === 0 ? 626.0 : 206.0), width: 98.0, height: 92.0 } : null;
                 if (!scannedLook && stampInfo && typeof STAMP_BASE64 !== 'undefined' && STAMP_BASE64) {
                     try {
                         const stampImg = await pdfDoc.embedPng('data:image/png;base64,' + STAMP_BASE64);
-                        page.drawImage(stampImg, {
+                        sigPage.drawImage(stampImg, {
                             x: stampInfo.x,
-                            y: pageHeight - 718.0,
+                            y: pageHeight - (stampInfo.y + stampInfo.height),
                             width: stampInfo.width,
                             height: stampInfo.height
                         });
@@ -807,48 +887,23 @@
                 }
             }
 
-            // Handle multi-page wrapped invoice (e.g. 3-page invoice where signatory is pushed to Page 1)
-            if (pages.length > 2) {
-                const page1 = pages[1];
-                const p1Height = page1.getHeight();
-                // Blanket-erase wrapped signatory area
-                page1.drawRectangle({
-                    x: 430.0,
-                    y: p1Height - 235.0,
-                    width: 155.0,
-                    height: 25.0,
-                    color: PDFLib.rgb(1, 1, 1)
-                });
-                const invFooterText = 'For ANNAPURNA MOTORS';
-                const invLen = helv.widthOfTextAtSize(invFooterText, 9);
-                page1.drawText(invFooterText, { x: 577.05 - invLen, y: p1Height - 226.0, size: 9, font: helv });
-
-                if (!scannedLook && affixStamp && typeof STAMP_BASE64 !== 'undefined' && STAMP_BASE64) {
-                    try {
-                        const stampImg = await pdfDoc.embedPng('data:image/png;base64,' + STAMP_BASE64);
-                        page1.drawImage(stampImg, {
-                            x: 438,
-                            y: p1Height - 340,
-                            width: 86,
-                            height: 86
-                        });
-                    } catch(e) {}
-                }
+            // 4. Assemble output document with non-terms pages only (Terms & Conditions dropped)
+            const cleanDoc = await PDFLib.PDFDocument.create();
+            const copiedPages = await cleanDoc.copyPages(pdfDoc, nonTermsPageIndices);
+            for (const cp of copiedPages) {
+                cleanDoc.addPage(cp);
             }
 
-            // User requirement: In the Invoice converter, ignore the 2nd page (Terms & Conditions)
-            // In the final output, strictly only include the first page (Page 0).
-            const singlePageDoc = await PDFLib.PDFDocument.create();
-            const [copiedPage0] = await singlePageDoc.copyPages(pdfDoc, [0]);
-            singlePageDoc.addPage(copiedPage0);
+            let modifiedPdfBytes = await cleanDoc.save();
+            const outPagesCount = cleanDoc.getPageCount();
 
-            let modifiedPdfBytes = await singlePageDoc.save();
             if (scannedLook) {
                 const invoiceStampInfo = affixStamp ? { x: 436.0, y: 626.0, width: 98.0, height: 92.0 } : null;
-                modifiedPdfBytes = await applyScannedLook(modifiedPdfBytes, bwMode, 1, invoiceStampInfo);
+                modifiedPdfBytes = await applyScannedLook(modifiedPdfBytes, bwMode, outPagesCount, invoiceStampInfo);
             } else {
-                modifiedPdfBytes = await ensureStrictlyUnder280KB(modifiedPdfBytes, 1);
+                modifiedPdfBytes = await ensureStrictlyUnder280KB(modifiedPdfBytes, outPagesCount);
             }
+
             return {
                 blob: new Blob([modifiedPdfBytes], { type: 'application/pdf' }),
                 sizeKb: (modifiedPdfBytes.byteLength / 1024).toFixed(1),
