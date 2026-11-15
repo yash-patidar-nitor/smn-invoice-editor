@@ -67,7 +67,7 @@ def test_real_files():
             assert len(page0.search_for("Shanti Motors")) == 0
             # Verify Annapurna is present
             assert len(page0.search_for("ANNAPURNA MOTORS")) >= 1
-            assert len(page0.search_for("For ANNAPURNA MOTORS")) >= 1
+            assert len(page0.search_for("For M/s.Annapurna Motors")) >= 1
             # Verify Hypothecation
             assert len(page0.search_for("AASTHA SAKH SAHKARITA")) >= 1
             # Verify Date (both top and body)
@@ -272,7 +272,62 @@ def test_hero_downloaded_documents():
         print("HERO DOWNLOADED DOCUMENTS CONVERSION TEST PASSED!")
 
 
+def test_sale_certificate_date_models():
+    """Verify that changing the date in Sale Certificate across different vehicle models
+    (Splendor+ where date is on line 0, and Destini where date wraps to line 1)
+    never clips or breaks 'Invoice #', and cleanly formats hyphens to slashes.
+    """
+    test_cases = [
+        (
+            r"c:\Users\yash.patidar\Downloads\Sale Certificate (1).PDF",
+            "63502BK26S391",
+            "15-11-2026",
+            "15/11/2026"
+        ),
+        (
+            r"c:\Users\yash.patidar\.gemini\antigravity\brain\d343b39a-56a2-4ef7-aba9-92463e5a405d\.user_uploaded\media_1794503809628.pdf",
+            "63502BK26S430",
+            "15-11-2026",
+            "15/11/2026"
+        )
+    ]
+
+    for pdf_path, inv_num, in_date, expected_date in test_cases:
+        if not os.path.exists(pdf_path):
+            continue
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_pdf = os.path.join(tmpdir, "test_sc_date.pdf")
+            stats = converter.convert_document(
+                pdf_path,
+                out_pdf,
+                new_date=in_date,
+                scanned_effect=False
+            )
+            assert stats["status"] == "success"
+
+            doc = fitz.open(out_pdf)
+            page0 = doc[0]
+
+            # 1. Invoice # must be 100% intact and NEVER broken
+            inv_hits = page0.search_for(inv_num)
+            assert len(inv_hits) >= 2, f"Expected at least 2 occurrences of invoice # {inv_num}, found {len(inv_hits)}"
+            inv_label_hits = page0.search_for("Invoice #")
+            assert len(inv_label_hits) >= 1, "Expected 'Invoice #' to be intact"
+
+            # 2. Date must be updated at both top-right and in the delivery body clause
+            date_hits = page0.search_for(expected_date)
+            assert len(date_hits) >= 2, f"Expected {expected_date} at top and in body, found {len(date_hits)}"
+
+            # 3. Delivery clause must be intact
+            assert len(page0.search_for("delivered by us on date")) >= 1
+
+            doc.close()
+            print(f"PASSED MODEL DATE VERIFICATION for {pdf_path}: {inv_num} pristine, date {expected_date} exact!")
+
+
 if __name__ == "__main__":
     test_mock_ci()
     test_real_files()
     test_hero_downloaded_documents()
+    test_sale_certificate_date_models()

@@ -224,43 +224,79 @@ def update_date_invoice(page: fitz.Page, new_date_str: str) -> bool:
 
 
 def update_date_sale_certificate(page: fitz.Page, new_date_str: str) -> bool:
-    """Update Date at top-right and in the body paragraph of Sale Certificate."""
+    """Update Date at top-right and in the body paragraph of Sale Certificate.
+    Dynamically locates the delivery clause date (handles same-line and wrapped dates)
+    and strictly avoids touching Invoice #. Normalizes date to DD/MM/YYYY.
+    """
     if not new_date_str or not new_date_str.strip():
         return False
 
-    clean_match = re.search(r"\d{2}/\d{2}/\d{4}", new_date_str)
-    date_only = clean_match.group(0) if clean_match else new_date_str.strip()
+    clean_match = re.search(r"(\d{1,2})[/-](\d{1,2})[/-](\d{4})", new_date_str.strip())
+    if clean_match:
+        d, m, y = clean_match.groups()
+        date_formatted = f"{int(d):02d}/{int(m):02d}/{y}"
+    else:
+        iso_match = re.search(r"(\d{4})[/-](\d{1,2})[/-](\d{1,2})", new_date_str.strip())
+        if iso_match:
+            y, m, d = iso_match.groups()
+            date_formatted = f"{int(d):02d}/{int(m):02d}/{y}"
+        else:
+            date_formatted = new_date_str.strip()
 
-    # 1. Top right date: strictly y=121.0 to 133.0
-    val_rect = fitz.Rect(510.0, 121.0, 580.0, 133.0)
-    old_text = page.get_text("text", clip=val_rect).strip()
-    old_date = None
-    m = re.search(r"\d{2}/\d{2}/\d{4}", old_text)
-    if m:
-        old_date = m.group(0)
-
+    # 1. Top right date: strictly y=120.0 to 134.0, x=510.0 to 580.0
+    val_rect = fitz.Rect(510.0, 120.0, 580.0, 134.0)
     page.add_redact_annot(val_rect, fill=(1, 1, 1))
     page.apply_redactions()
     page.insert_text(
         (512.1, 130.19),
-        f"  {date_only}",
+        f"  {date_formatted}",
         fontsize=9.0,
         fontname="helv",
         color=(0, 0, 0)
     )
 
-    # 2. Date in body paragraph (e.g. 'delivered by us on date 11/11/2026 with')
-    # Strictly between y=190.0 and 200.0, x=64.0 and 115.0
-    body_date_rect = fitz.Rect(64.0, 190.0, 115.0, 200.0)
-    page.add_redact_annot(body_date_rect, fill=(1, 1, 1))
-    page.apply_redactions()
-    page.insert_text(
-        (65.7, 197.83),
-        date_only,
-        fontsize=9.0,
-        fontname="helv",
-        color=(0, 0, 0)
-    )
+    # 2. Body clause date: Dynamically find the date word in the delivery clause
+    # (between y=170.0 and 205.0). Tight safe rect strictly avoids touching adjacent lines (never touches Invoice #)
+    words = page.get_text("words")
+    body_date_found = False
+
+    for w in words:
+        if 170.0 <= w[1] <= 205.0 and re.search(r"\b\d{2}[/-]\d{2}[/-]\d{4}\b", w[4]):
+            baseline = w[3] - 2.7
+            # Tight safe rect: never touches lines above or below (no Invoice # clipping)
+            safe_rect = fitz.Rect(w[0] - 0.5, baseline - 7.2, w[2] + 0.5, baseline + 0.5)
+            page.add_redact_annot(safe_rect, fill=(1, 1, 1))
+            page.apply_redactions()
+            page.insert_text(
+                (w[0], baseline),
+                date_formatted,
+                fontsize=9.0,
+                fontname="helv",
+                color=(0, 0, 0)
+            )
+            body_date_found = True
+            break
+
+    if not body_date_found:
+        # Fallback: search for "delivered by us on date"
+        hits = page.search_for("delivered by us on date")
+        if hits:
+            h = hits[0]
+            if h.x1 + 60.0 <= page.rect.width - 40.0:
+                # Same line (e.g. Splendor+, HF Deluxe)
+                baseline = h.y1 - 2.7
+                safe_rect = fitz.Rect(h.x1, baseline - 7.2, h.x1 + 46.0, baseline + 0.5)
+                page.add_redact_annot(safe_rect, fill=(1, 1, 1))
+                page.apply_redactions()
+                page.insert_text((h.x1 + 2.5, baseline), date_formatted, fontsize=9.0, fontname="helv", color=(0, 0, 0))
+            else:
+                # Wrapped to next line (e.g. Destini Prime)
+                baseline = h.y1 + 7.7
+                safe_rect = fitz.Rect(65.0, baseline - 7.2, 111.5, baseline + 0.5)
+                page.add_redact_annot(safe_rect, fill=(1, 1, 1))
+                page.apply_redactions()
+                page.insert_text((65.7, baseline), date_formatted, fontsize=9.0, fontname="helv", color=(0, 0, 0))
+
     return True
 
 
