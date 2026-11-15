@@ -326,8 +326,60 @@ def test_sale_certificate_date_models():
             print(f"PASSED MODEL DATE VERIFICATION for {pdf_path}: {inv_num} pristine, date {expected_date} exact!")
 
 
+def test_invoice_authorized_signatory_robustness():
+    """Verify that Authorized Signatory is 100% present in both 1-page/2-page invoices
+    and multi-page continuation invoices (e.g. Ann.pdf), Terms are dropped, and
+    signatory text is cleanly replaced with For ANNAPURNA MOTORS.
+    """
+    test_files = [
+        r"c:\Users\yash.patidar\Downloads\smn.pdf",
+        r"c:\Users\yash.patidar\Downloads\Ann.pdf",
+        r"c:\Users\yash.patidar\.gemini\antigravity\brain\d343b39a-56a2-4ef7-aba9-92463e5a405d\.user_uploaded\media_1794501918315.pdf"
+    ]
+
+    for inv_path in test_files:
+        if not os.path.exists(inv_path):
+            continue
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_pdf = os.path.join(tmpdir, "test_inv_robust.pdf")
+            stats = converter.convert_document(
+                inv_path,
+                out_pdf,
+                scanned_effect=False
+            )
+            assert stats["status"] == "success"
+            assert stats["doc_type"] == "invoice"
+
+            doc = fitz.open(out_pdf)
+            # Terms and conditions page must NOT be present
+            for p in doc:
+                assert "terms & conditions" not in p.get_text().lower()
+
+            # Authorized Signatory MUST be present on the signature page
+            sig_found = False
+            for p in doc:
+                if len(p.search_for("Authorized Signatory")) > 0:
+                    sig_found = True
+                    break
+            assert sig_found, f"Authorized Signatory is missing in converted {inv_path}!"
+
+            # For ANNAPURNA MOTORS must be present
+            ann_sig_found = False
+            for p in doc:
+                if len(p.search_for("For ANNAPURNA MOTORS")) > 0:
+                    ann_sig_found = True
+                    break
+            assert ann_sig_found, f"For ANNAPURNA MOTORS is missing in converted {inv_path}!"
+
+            num_pages = len(doc)
+            doc.close()
+            print(f"PASSED ROBUST INVOICE TEST for {inv_path} ({num_pages} pages kept, Authorized Signatory verified!)")
+
+
 if __name__ == "__main__":
     test_mock_ci()
     test_real_files()
     test_hero_downloaded_documents()
     test_sale_certificate_date_models()
+    test_invoice_authorized_signatory_robustness()

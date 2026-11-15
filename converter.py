@@ -300,74 +300,121 @@ def update_date_sale_certificate(page: fitz.Page, new_date_str: str) -> bool:
     return True
 
 
+def is_terms_page(page: fitz.Page) -> bool:
+    """Check if a page is a Terms & Conditions / Disclaimer page."""
+    txt = page.get_text().lower()
+    return ('terms & conditions' in txt or 
+            'terms and conditions' in txt or 
+            'kindly visit hmcl dealership' in txt)
+
+
 def convert_invoice(doc: fitz.Document, hypothecation: str = None, new_date: str = None, affix_stamp: bool = True) -> dict:
-    """Convert a Shanti Motors Tax Invoice into Annapurna Motors format. Strictly touches invoice content, leaves Terms untouched."""
+    """Convert a Shanti Motors Tax Invoice into Annapurna Motors format.
+    - Dynamically detects and drops ONLY Terms & Conditions pages.
+    - Dynamically locates and protects 'Authorized Signatory'.
+    - Self-healing: Guarantees 'Authorized Signatory' is NEVER missing.
+    """
     cfg = ANNAPURNA_INVOICE_CONFIG
     headers_replaced = 0
     footers_replaced = 0
+    stamp_affixed = False
 
     if len(doc) == 0:
         return {"doc_type": "invoice", "headers_replaced": 0, "footers_replaced": 0, "stamp_affixed": False}
 
-    for p_idx, page in enumerate(doc):
-        # Never touch the final page if it is Terms & Conditions
-        if len(doc) > 1 and p_idx == len(doc) - 1:
-            continue
+    # 1. Identify non-terms pages (drop only Terms & Conditions pages)
+    invoice_page_indices = [i for i, p in enumerate(doc) if not is_terms_page(p)]
+    if not invoice_page_indices:
+        invoice_page_indices = [0]
 
-        # 1. Replace Header on Page 0
-        if p_idx == 0:
-            shanti_hits = page.search_for("SHANTI MOTORS")
-            gstin_hits = page.search_for("23AQMPP0120E1ZE")
-            header_hit = any(h.y0 < 200 for h in shanti_hits)
+    # 2. Process Page 0: Dealer Header, Hypothecation, Date
+    page0 = doc[0]
+    shanti_hits = page0.search_for("SHANTI MOTORS")
+    gstin_hits = page0.search_for("23AQMPP0120E1ZE")
+    header_hit = any(h.y0 < 200 for h in shanti_hits)
 
-            if header_hit or (gstin_hits and gstin_hits[0].y0 < 200):
-                header_rect = fitz.Rect(26.0, 106.0, 440.0, 170.0)
-                page.add_redact_annot(header_rect, fill=(1, 1, 1))
-                page.apply_redactions()
+    if header_hit or (gstin_hits and gstin_hits[0].y0 < 200):
+        header_rect = fitz.Rect(26.0, 106.0, 440.0, 170.0)
+        page0.add_redact_annot(header_rect, fill=(1, 1, 1))
+        page0.apply_redactions()
 
-                page.insert_text((28.35, 120.5), cfg["dealer_name"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                page.insert_text((28.35, 131.0), cfg["address_line1"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                page.insert_text((28.35, 142.0), cfg["address_line2"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                page.insert_text((28.35, 153.0), cfg["dealer_auth"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                page.insert_text((28.35, 164.0), cfg["gstin_pan"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                headers_replaced += 1
+        page0.insert_text((28.35, 120.5), cfg["dealer_name"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+        page0.insert_text((28.35, 131.0), cfg["address_line1"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+        page0.insert_text((28.35, 142.0), cfg["address_line2"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+        page0.insert_text((28.35, 153.0), cfg["dealer_auth"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+        page0.insert_text((28.35, 164.0), cfg["gstin_pan"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
+        headers_replaced += 1
 
-            if hypothecation:
-                update_hypothecation_invoice(page, hypothecation)
+    if hypothecation:
+        update_hypothecation_invoice(page0, hypothecation)
 
-            if new_date:
-                update_date_invoice(page, new_date)
+    if new_date:
+        update_date_invoice(page0, new_date)
 
-        # 2. Obliterate ANY and ALL Shanti Motors references in the right-side signatory block
-        signatory_hit = False
-        for term in ["SHANTI MOTORS", "Shanti Motors", "shanti motors", "M/S.SHANTI", "M/s.Shanti", "For M/S", "For M/s", "For  M"]:
-            for h in page.search_for(term):
-                if h.y0 > 200 and h.x0 > 380:
-                    page.add_redact_annot(fitz.Rect(430.0, h.y0 - 5, 585.0, h.y1 + 5), fill=(1, 1, 1))
-                    signatory_hit = True
+    # 3. Process Signatory Block on the invoice page containing the signature
+    sig_page_idx = invoice_page_indices[-1]
+    for p_idx in invoice_page_indices:
+        p = doc[p_idx]
+        if len(p.search_for("Authorized Signatory")) > 0 or any(h.x0 > 380 and h.y0 > 200 for h in p.search_for("Signatory")):
+            sig_page_idx = p_idx
+            break
 
-        # Blanket-redact both candidate vertical bands to guarantee NO residual text leaks
-        page.add_redact_annot(fitz.Rect(430.0, 590.0, 585.0, 615.0), fill=(1, 1, 1))
-        page.add_redact_annot(fitz.Rect(430.0, 630.0, 585.0, 655.0), fill=(1, 1, 1))
-        page.apply_redactions()
+    sig_page = doc[sig_page_idx]
 
-        # Insert For ANNAPURNA MOTORS cleanly right-aligned
-        if p_idx == 0 or signatory_hit:
-            footer_text = cfg["footer_signatory"]
-            text_len = fitz.get_text_length(footer_text, fontname="helv", fontsize=9.0)
-            target_x = max(28.35, 577.05 - text_len)
-            target_y = 647.5 if p_idx == 0 else 226.0
-            page.insert_text((target_x, target_y), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
-            footers_replaced += 1
+    # Locate Authorized Signatory accurately
+    auth_hits = sig_page.search_for("Authorized Signatory")
+    if not auth_hits:
+        auth_hits = [h for h in sig_page.search_for("Signatory") if h.x0 > 380 and h.y0 > 200]
 
-    # 3. Affix Authentic Stamp & Signature on Page 0
-    stamp_affixed = False
-    if affix_stamp and len(doc) > 0:
-        stamp_affixed = affix_dealer_stamp_invoice(doc[0])
+    y_auth = auth_hits[0].y0 if auth_hits else None
 
-    # 4. Strictly ignore Page 2 (Terms & Conditions) and keep only Page 1 (Page 0)
-    while len(doc) > 1:
-        doc.delete_page(1)
+    # Locate Shanti Motors in the signature block (right side, lower half)
+    shanti_sig_hits = []
+    for term in ["SHANTI MOTORS", "Shanti Motors", "shanti motors", "M/S.SHANTI", "M/s.Shanti", "For M/S", "For M/s", "For  M"]:
+        for h in sig_page.search_for(term):
+            if h.y0 > 200 and h.x0 > 380:
+                shanti_sig_hits.append(h)
+
+    # Redact Shanti Motors in signature: strictly bounded so y >= y_auth - 3 is NEVER touched!
+    for h in shanti_sig_hits:
+        bottom_lim = (y_auth - 3.0) if y_auth else (h.y1 + 3.0)
+        sig_page.add_redact_annot(fitz.Rect(420.0, h.y0 - 2.0, 585.0, min(h.y1 + 2.0, bottom_lim)), fill=(1, 1, 1))
+
+    if not shanti_sig_hits:
+        if y_auth:
+            # Dealer line sits strictly 35 to 45 pt above Authorized Signatory
+            sig_page.add_redact_annot(fitz.Rect(430.0, y_auth - 48.0, 585.0, y_auth - 34.0), fill=(1, 1, 1))
+        else:
+            # Fallback standard line
+            sig_page.add_redact_annot(fitz.Rect(430.0, 630.0, 585.0, 655.0), fill=(1, 1, 1))
+
+    sig_page.apply_redactions()
+
+    # Draw For ANNAPURNA MOTORS
+    footer_text = cfg["footer_signatory"]
+    text_len = fitz.get_text_length(footer_text, fontname="helv", fontsize=9.0)
+    target_x = max(28.35, 577.05 - text_len)
+    dealer_y = (y_auth - 38.0) if y_auth else (647.5 if sig_page_idx == 0 else 226.0)
+    sig_page.insert_text((target_x, dealer_y), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
+    footers_replaced += 1
+
+    # CRITICAL SELF-HEALING: Verify that Authorized Signatory is 100% present on the signature page!
+    auth_check = sig_page.search_for("Authorized Signatory")
+    if not auth_check:
+        auth_text = "Authorized Signatory"
+        auth_len = fitz.get_text_length(auth_text, fontname="helv", fontsize=9.0)
+        auth_x = max(28.35, 577.05 - auth_len)
+        auth_y = (y_auth + 12.0) if y_auth else (dealer_y + 38.0)
+        sig_page.insert_text((auth_x, auth_y), auth_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
+
+    # 4. Affix Authentic Stamp & Signature
+    if affix_stamp:
+        stamp_affixed = affix_dealer_stamp_invoice(sig_page)
+
+    # 5. Remove Terms & Conditions pages, keeping all actual invoice pages
+    for i in range(len(doc) - 1, -1, -1):
+        if i not in invoice_page_indices:
+            doc.delete_page(i)
 
     return {
         "doc_type": "invoice",
@@ -441,6 +488,22 @@ def convert_sale_certificate(doc: fitz.Document, hypothecation: str = None, new_
     }
 
 
+def convert_form_22(doc: fitz.Document, affix_stamp: bool = True) -> dict:
+    """Convert Form 22 Road-Worthiness Certificate: strictly 1 page, affixes stamp in bottom-left."""
+    stamps_affixed = 0
+    if len(doc) > 1:
+        doc.select([0])
+    if affix_stamp and len(doc) > 0:
+        if affix_dealer_stamp_form_22(doc[0]):
+            stamps_affixed += 1
+    return {
+        "doc_type": "form_22",
+        "headers_replaced": 0,
+        "footers_replaced": 0,
+        "stamp_affixed": stamps_affixed > 0
+    }
+
+
 def apply_scanned_effect(doc: fitz.Document, bw_mode: bool = True, stamp_info: dict = None, max_kb: int = 270) -> fitz.Document:
     """
     Renders PDF pages as realistic physically printed, stamped, and scanned pages:
@@ -511,142 +574,25 @@ def apply_scanned_effect(doc: fitz.Document, bw_mode: bool = True, stamp_info: d
 def convert_document(input_path: str, output_path: str, hypothecation: str = None, new_date: str = None, affix_stamp: bool = True, doc_type: str = "auto", scanned_effect: bool = True, bw_mode: bool = True) -> dict:
     """
     Main conversion entry point.
-    Processes each page individually, accurately handling standalone Tax Invoices,
-    standalone Form 21 Sale Certificates, Form 22 Road-Worthiness Certificates,
-    or multi-page documents containing BOTH!
+    Delegates to the dedicated, robust converter for each document type:
+    - Form 22: convert_form_22
+    - Form 21 Sale Certificate: convert_sale_certificate
+    - Tax Invoice: convert_invoice
     Guarantees generated output is strictly below 280 KB.
     """
     doc = fitz.open(input_path)
     total_pages = len(doc)
-    headers_replaced = 0
-    footers_replaced = 0
-    stamps_affixed = 0
-    types_found = set()
-
-    # Determine explicit or detected doc type
     detected_type = detect_document_type(doc, input_path) if doc_type == "auto" else doc_type
 
     if detected_type == "form_22":
-        types_found.add("form_22")
-        # In case of Form 22: NO editing/change is required.
-        # Only affixing of the Annapurna Motors stamp on the bottom-left blank area.
-        if affix_stamp and total_pages > 0:
-            target_page = doc[0]
-            if affix_dealer_stamp_form_22(target_page):
-                stamps_affixed += 1
+        stats = convert_form_22(doc, affix_stamp=affix_stamp)
+        stamp_info = {"x": 180.0, "y": 688.0, "width": 88.0, "height": 90.0} if affix_stamp else None
+    elif detected_type == "sale_certificate":
+        stats = convert_sale_certificate(doc, hypothecation=hypothecation, new_date=new_date, affix_stamp=affix_stamp)
+        stamp_info = {"x": 440.0, "y": 600.0, "width": 74.0, "height": 68.0} if affix_stamp else None
     else:
-        for page in doc:
-            page_text = page.get_text()
-            if "SALE CERTIFICATE" in page_text or "Form No .21" in page_text:
-                types_found.add("sale_certificate")
-                # --- Sale Certificate Processing ---
-                shanti_hits = [h for h in page.search_for("Shanti Motors") if h.y0 < 100]
-                if not shanti_hits:
-                    shanti_hits = [h for h in page.search_for("SHANTI MOTORS") if h.y0 < 100]
-
-                if shanti_hits:
-                    page.add_redact_annot(fitz.Rect(54.0, 22.0, 440.0, 75.0), fill=(1, 1, 1))
-                    page.apply_redactions()
-                    cfg = ANNAPURNA_SC_CONFIG
-                    page.insert_text((56.7, 35.0), cfg["dealer_name"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                    page.insert_text((56.7, 46.0), cfg["address_line1"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                    page.insert_text((56.7, 57.0), cfg["address_line2"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                    page.insert_text((56.7, 68.0), cfg["dealer_auth"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                    headers_replaced += 1
-
-                if hypothecation:
-                    update_hypothecation_sale_certificate(page, hypothecation)
-
-                if new_date:
-                    update_date_sale_certificate(page, new_date)
-
-                # Obliterate ANY and ALL Shanti Motors references in signatory block
-                for term in ["SHANTI MOTORS", "Shanti Motors", "shanti motors", "M/S.SHANTI", "M/s.Shanti", "For M/S", "For M/s", "For  M"]:
-                    for h in page.search_for(term):
-                        if h.y0 > 200 and h.x0 > 380:
-                            page.add_redact_annot(fitz.Rect(430.0, h.y0 - 5, 585.0, h.y1 + 5), fill=(1, 1, 1))
-
-                # Blanket-redact the full signatory header band (y: 575.0 to 620.0) so no residual Shanti Motors can ever leak
-                # Leaves 38 pt safety margin above Authorized Signatory at y=658.7
-                page.add_redact_annot(fitz.Rect(425.0, 575.0, 585.0, 620.0), fill=(1, 1, 1))
-                page.apply_redactions()
-
-                footer_text = ANNAPURNA_SC_CONFIG["footer_signatory"]
-                text_len = fitz.get_text_length(footer_text, fontname="helv", fontsize=9.0)
-                target_x = max(56.7, 570.0 - text_len)
-                page.insert_text((target_x, 595.0), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                footers_replaced += 1
-
-                if affix_stamp:
-                    if affix_dealer_stamp_sale_certificate(page):
-                        stamps_affixed += 1
-
-            else:
-                # --- Tax Invoice Processing ---
-                shanti_hits = page.search_for("SHANTI MOTORS")
-                gstin_hits = page.search_for("23AQMPP0120E1ZE")
-                header_hit = any(h.y0 < 200 for h in shanti_hits)
-                is_invoice_face = header_hit or (gstin_hits and gstin_hits[0].y0 < 200)
-
-                if is_invoice_face:
-                    types_found.add("invoice")
-                    header_rect = fitz.Rect(26.0, 106.0, 440.0, 170.0)
-                    page.add_redact_annot(header_rect, fill=(1, 1, 1))
-                    page.apply_redactions()
-                    cfg = ANNAPURNA_INVOICE_CONFIG
-                    page.insert_text((28.35, 120.5), cfg["dealer_name"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                    page.insert_text((28.35, 131.0), cfg["address_line1"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                    page.insert_text((28.35, 142.0), cfg["address_line2"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                    page.insert_text((28.35, 153.0), cfg["dealer_auth"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                    page.insert_text((28.35, 164.0), cfg["gstin_pan"], fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                    headers_replaced += 1
-
-                    if hypothecation:
-                        update_hypothecation_invoice(page, hypothecation)
-
-                    if new_date:
-                        update_date_invoice(page, new_date)
-
-                    # Obliterate ANY and ALL Shanti Motors references in signatory block
-                    for term in ["SHANTI MOTORS", "Shanti Motors", "shanti motors", "M/S.SHANTI", "M/s.Shanti", "For M/S", "For M/s", "For  M"]:
-                        for h in page.search_for(term):
-                            if h.y0 > 200 and h.x0 > 380:
-                                page.add_redact_annot(fitz.Rect(430.0, h.y0 - 5, 585.0, h.y1 + 5), fill=(1, 1, 1))
-
-                    # Blanket-redact both candidate vertical bands
-                    page.add_redact_annot(fitz.Rect(430.0, 590.0, 585.0, 615.0), fill=(1, 1, 1))
-                    page.add_redact_annot(fitz.Rect(430.0, 630.0, 585.0, 655.0), fill=(1, 1, 1))
-                    page.apply_redactions()
-
-                    footer_text = ANNAPURNA_INVOICE_CONFIG["footer_signatory"]
-                    text_len = fitz.get_text_length(footer_text, fontname="helv", fontsize=9.0)
-                    target_x = max(28.35, 577.05 - text_len)
-                    page.insert_text((target_x, 647.5), footer_text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
-                    footers_replaced += 1
-
-                    if affix_stamp:
-                        if affix_dealer_stamp_invoice(page):
-                            stamps_affixed += 1
-
-    # User requirement: Strictly truncate the 2nd page in ALL docs (Invoice, Sale Certificate, Form 22).
-    # Final output must strictly only contain Page 1 (Page 0).
-    if len(doc) > 1:
-        doc.select([0])
-
-    is_invoice = (detected_type == "invoice") or ("invoice" in types_found and "sale_certificate" not in types_found)
-
-    # Determine stamp positioning info for scanned effect
-    if affix_stamp:
-        if is_invoice:
-            stamp_info = {"x": 436.0, "y": 626.0, "width": 98.0, "height": 92.0}
-        elif detected_type == "sale_certificate" or "sale_certificate" in types_found:
-            stamp_info = {"x": 440.0, "y": 600.0, "width": 74.0, "height": 68.0}
-        elif detected_type == "form_22":
-            stamp_info = {"x": 180.0, "y": 688.0, "width": 88.0, "height": 90.0}
-        else:
-            stamp_info = {"x": 436.0, "y": 626.0, "width": 98.0, "height": 92.0}
-    else:
-        stamp_info = None
+        stats = convert_invoice(doc, hypothecation=hypothecation, new_date=new_date, affix_stamp=affix_stamp)
+        stamp_info = {"x": 436.0, "y": 626.0, "width": 98.0, "height": 92.0} if affix_stamp else None
 
     # Apply scanned effect (B&W laser print filter applied FIRST, then stamp affixed on top in color)
     if scanned_effect:
@@ -685,21 +631,12 @@ def convert_document(input_path: str, output_path: str, hypothecation: str = Non
         doc_retry.close()
         file_size_kb = os.path.getsize(output_path) / 1024.0
 
-    if "form_22" in types_found:
-        final_type = "form_22"
-    elif "sale_certificate" in types_found and "invoice" in types_found:
-        final_type = "both"
-    elif "sale_certificate" in types_found:
-        final_type = "sale_certificate"
-    else:
-        final_type = "invoice"
-
     return {
-        "doc_type": final_type,
+        "doc_type": detected_type,
         "pages_processed": total_pages,
-        "headers_replaced": headers_replaced,
-        "footers_replaced": footers_replaced,
-        "stamps_affixed": stamps_affixed,
+        "headers_replaced": stats.get("headers_replaced", 1),
+        "footers_replaced": stats.get("footers_replaced", 1),
+        "stamps_affixed": 1 if stats.get("stamp_affixed", False) else 0,
         "file_size_kb": round(file_size_kb, 1),
         "status": "success"
     }
