@@ -103,7 +103,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <span class="badge">Shanti Motors ➔ Annapurna Motors • v2.9.9 Precise Signatory Baseline Alignment &amp; Zero Collision</span>
+            <span class="badge">Shanti Motors ➔ Annapurna Motors • v3.0.0 Precision Multi-Page Scoring, Time Preservation &amp; Signatory Protection</span>
             <h1 class="title">Hero Document Converter</h1>
             <p class="subtitle">Pixel-perfect conversion for Hero MotoCorp Invoices, Form 21 Sale Certificates & Form 22</p>
         </div>
@@ -495,7 +495,7 @@
                             } catch(e) {}
                         }
 
-                        if (p === 1 && stampInfo && stampImgElement) {
+                        if (p === targetStampPage && stampInfo && stampImgElement) {
                             ctx.drawImage(
                                 stampImgElement,
                                 stampInfo.x * retryScale,
@@ -728,6 +728,8 @@
             let sigPageIndex = -1;
             let dealerBaseY = null; // bottom-up baseline (PDF user units)
             let authBaseY = null;   // bottom-up baseline (PDF user units)
+            let detectedDateBaseY = null;
+            let detectedOriginalTime = null;
 
             if (typeof pdfjsLib !== 'undefined') {
                 try {
@@ -735,6 +737,7 @@
                     const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer.slice(0) });
                     const pdfJsDoc = await loadingTask.promise;
                     const numP = pdfJsDoc.numPages;
+                    let pageScores = [];
 
                     for (let p = 1; p <= numP; p++) {
                         const page = await pdfJsDoc.getPage(p);
@@ -749,54 +752,83 @@
                             nonTermsPageIndices.push(p - 1);
                         }
 
-                        // Inspect non-terms page for signature block
-                        if (!isTerms && sigPageIndex === -1) {
-                            // Priority 1: Check for 'Signatory' or 'Authorized' on right side (x > 380)
+                        // Inspect Page 1 (index 0) for Date & Time
+                        if (p === 1) {
                             for (let i = 0; i < textContent.items.length; i++) {
                                 const it = textContent.items[i];
-                                const s = (it.str || '').toLowerCase();
+                                const s = (it.str || '').trim();
                                 const x = it.transform[4];
-                                const y = it.transform[5]; // transform[5] IS the bottom-up baseline!
-                                if ((s.includes('signatory') || s.includes('authorized')) && x > 380 && y > 50) {
-                                    sigPageIndex = p - 1;
-                                    authBaseY = y;
-                                    dealerBaseY = y + 47.0;
-                                    break;
+                                const y = it.transform[5];
+                                // Search for timestamp (HH:MM:SS or HH:MM) on page 0 in Date zone
+                                const timeMatch = s.match(/\d{1,2}:\d{2}(?::\d{2})?/);
+                                if (timeMatch && x > 380 && y > 250) {
+                                    detectedOriginalTime = timeMatch[0];
+                                    detectedDateBaseY = y;
                                 }
-                            }
-
-                            // Priority 2: Check for Dealer name in signature block (x > 380)
-                            if (sigPageIndex === -1) {
-                                for (let i = 0; i < textContent.items.length; i++) {
-                                    const it = textContent.items[i];
-                                    const s = (it.str || '').toLowerCase();
-                                    const x = it.transform[4];
-                                    const y = it.transform[5]; // bottom-up baseline!
-                                    if ((s.includes('shanti') || s.includes('annapurna') || s.includes('for m/')) && x > 380 && y > 50) {
-                                        sigPageIndex = p - 1;
-                                        dealerBaseY = y;
-                                        authBaseY = y - 47.0;
-                                        break;
-                                    }
-                                }
-                            }
-
-                            // Priority 3: Check for Customer's Signatures on left side (same vertical level)
-                            if (sigPageIndex === -1) {
-                                for (let i = 0; i < textContent.items.length; i++) {
-                                    const it = textContent.items[i];
-                                    const s = (it.str || '').toLowerCase();
-                                    const x = it.transform[4];
-                                    const y = it.transform[5]; // bottom-up baseline!
-                                    if (s.includes('signatures') && x < 200 && y > 50) {
-                                        sigPageIndex = p - 1;
-                                        dealerBaseY = y;
-                                        authBaseY = y - 47.0;
-                                        break;
-                                    }
+                                if (/\d{2}[/-]\d{2}[/-]\d{4}/.test(s) && x > 380 && y > 250 && !detectedDateBaseY) {
+                                    detectedDateBaseY = y;
                                 }
                             }
                         }
+
+                        // Score this page for signature block
+                        let score = 0;
+                        let pAuthY = null;
+                        let pDealerY = null;
+                        let pCustY = null;
+
+                        for (let i = 0; i < textContent.items.length; i++) {
+                            const it = textContent.items[i];
+                            const s = (it.str || '').toLowerCase();
+                            const x = it.transform[4];
+                            const y = it.transform[5];
+
+                            // Check for Authorised / Authorized Signatory
+                            if ((s.includes('signatory') || s.includes('authori')) && x > 320 && y > 30) {
+                                score += 10;
+                                if (pAuthY === null) pAuthY = y;
+                            }
+                            // Check for Dealer signature line
+                            if ((s.includes('shanti') || s.includes('annapurna') || s.includes('for m/')) && x > 320 && y > 30) {
+                                score += 10;
+                                if (pDealerY === null) pDealerY = y;
+                            }
+                            // Check for Customer's Signatures
+                            if ((s.includes('signatures') || s.includes('customer')) && x < 250 && y > 30) {
+                                score += 5;
+                                if (pCustY === null) pCustY = y;
+                            }
+                        }
+
+                        pageScores.push({
+                            pageIndex: p - 1,
+                            isTerms: isTerms,
+                            score: score,
+                            authY: pAuthY,
+                            dealerY: pDealerY,
+                            custY: pCustY
+                        });
+                    }
+
+                    if (nonTermsPageIndices.length === 0) nonTermsPageIndices = [0];
+
+                    // Select the highest-scoring non-terms page as the true signature page
+                    const validPages = pageScores.filter(ps => !ps.isTerms && nonTermsPageIndices.includes(ps.pageIndex));
+                    validPages.sort((a, b) => b.score - a.score);
+
+                    let best = validPages[0] || pageScores[0];
+                    sigPageIndex = best.pageIndex;
+                    dealerBaseY = best.dealerY;
+                    authBaseY = best.authY;
+
+                    // If one baseline is missing, derive it safely
+                    if (dealerBaseY !== null && authBaseY === null) {
+                        authBaseY = dealerBaseY - 47.0;
+                    } else if (authBaseY !== null && dealerBaseY === null) {
+                        dealerBaseY = authBaseY + 47.0;
+                    } else if (dealerBaseY === null && authBaseY === null && best.custY !== null) {
+                        dealerBaseY = best.custY;
+                        authBaseY = best.custY - 47.0;
                     }
                 } catch (e) {
                     console.warn('PDF.js invoice structure inspection error:', e);
@@ -816,7 +848,7 @@
                 authBaseY = dealerBaseY - 47.0;
             }
 
-            // 2. Process Page 0: Header, Date, Hypothecation
+            // 2. Process Page 0: Header, Date & Time, Hypothecation
             if (pages.length > 0) {
                 const page0 = pages[0];
                 const p0Height = page0.getHeight();
@@ -835,17 +867,34 @@
                 page0.drawText('Authorized Dealer: Hero MotoCorp Ltd.', { x: 28.35, y: p0Height - 153.0, size: 9, font: helvBold });
                 page0.drawText('GSTIN #: 23AFTPG6974R1ZE PAN# AFTPG6974R', { x: 28.35, y: p0Height - 164.0, size: 9, font: helv });
 
-                // 2. Date in Invoice (Page 0 only)
+                // 2. Date and Time in Invoice (Page 0 only)
                 if (newDate && newDate.trim()) {
-                    const cleanDate = normalizeDateString(newDate);
+                    let formattedDate = normalizeDateString(newDate);
+                    // Check if newDate already includes user-specified time
+                    const userTimeMatch = newDate.match(/\d{1,2}:\d{2}(?::\d{2})?/);
+                    let finalDateTime = formattedDate;
+                    if (userTimeMatch) {
+                        finalDateTime = formattedDate + ' ' + userTimeMatch[0];
+                    } else if (detectedOriginalTime) {
+                        // Preserve authentic original timestamp from invoice!
+                        finalDateTime = formattedDate + ' ' + detectedOriginalTime;
+                    }
+
+                    const targetDateY = detectedDateBaseY !== null ? detectedDateBaseY : (p0Height - 232.17);
+                    // Redact wide enough to cover entire Date + Time (width: 120 pt)
                     page0.drawRectangle({
-                        x: 478.0,
-                        y: p0Height - 234.5,
-                        width: 95.0,
-                        height: 11.0,
+                        x: 472.0,
+                        y: targetDateY - 4.0,
+                        width: 120.0,
+                        height: 15.0,
                         color: PDFLib.rgb(1, 1, 1)
                     });
-                    page0.drawText(' ' + cleanDate, { x: 479.8, y: p0Height - 232.17, size: 9, font: helv });
+                    page0.drawText(' ' + finalDateTime, {
+                        x: 479.8,
+                        y: targetDateY,
+                        size: 9,
+                        font: helv
+                    });
                 }
 
                 // 3. Hypothecation in Invoice (Page 0 only)
@@ -868,12 +917,11 @@
                 const sigPage = pages[sigPageIndex];
                 const pageHeight = sigPage.getHeight();
 
-                // 1. Redact ONLY the dealer line band (dealerBaseY - 4.0 to dealerBaseY + 11.0, height: 15.0)
-                // Exactly covers the old dealer text with zero vertical offset!
+                // 1. Redact ONLY the dealer line band (covering wide right zone from x=390 to 585)
                 sigPage.drawRectangle({
-                    x: 420.0,
+                    x: 390.0,
                     y: dealerBaseY - 4.0,
-                    width: 165.0,
+                    width: 195.0,
                     height: 15.0,
                     color: PDFLib.rgb(1, 1, 1)
                 });
@@ -891,9 +939,9 @@
 
                 // 3. CRITICAL SELF-HEALING: Redact old signatory line and redraw at exact original baseline
                 sigPage.drawRectangle({
-                    x: 420.0,
+                    x: 390.0,
                     y: authBaseY - 4.0,
-                    width: 165.0,
+                    width: 195.0,
                     height: 15.0,
                     color: PDFLib.rgb(1, 1, 1)
                 });
