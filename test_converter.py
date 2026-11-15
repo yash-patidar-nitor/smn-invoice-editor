@@ -30,19 +30,18 @@ def test_real_files():
             assert stats["status"] == "success"
             assert stats["doc_type"] == "invoice"
 
-            doc = fitz.open(out_pdf)
-            page0 = doc[0]
-            # Verify Shanti Motors is gone
-            assert len(page0.search_for("SHANTI MOTORS")) == 0
-            # Verify Annapurna is present
-            assert len(page0.search_for("ANNAPURNA MOTORS")) >= 1
-            assert len(page0.search_for("For ANNAPURNA MOTORS")) >= 1
-            # Verify Invoice # and Mobile # are NOT truncated
-            assert len(page0.search_for("63502BK26S368")) >= 1
-            assert len(page0.search_for("9343006704")) >= 1
-            # Verify Page 2 was ignored and only Page 1 is in the final output
-            assert len(doc) == 1, f"Expected exactly 1 page for converted Invoice, got {len(doc)}"
-            doc.close()
+            with fitz.open(out_pdf) as doc:
+                page0 = doc[0]
+                # Verify Shanti Motors is gone
+                assert len(page0.search_for("SHANTI MOTORS")) == 0
+                # Verify Annapurna is present
+                assert len(page0.search_for("ANNAPURNA MOTORS")) >= 1
+                assert len(page0.search_for("For ANNAPURNA MOTORS")) >= 1
+                # Verify Invoice # and Mobile # are NOT truncated
+                assert len(page0.search_for("63502BK26S368")) >= 1
+                assert len(page0.search_for("9343006704")) >= 1
+                # Verify Page 2 was ignored and only Page 1 is in the final output
+                assert len(doc) == 1, f"Expected exactly 1 page for converted Invoice, got {len(doc)}"
             print("INVOICE TEST PASSED: Header, Footer, Hypothecation, Date, and pristine font preservation verified!")
 
     # 2. Test Sale Certificate if present

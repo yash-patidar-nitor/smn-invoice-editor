@@ -194,16 +194,19 @@ def update_hypothecation_sale_certificate(page: fitz.Page, hypothecation: str) -
 
 
 def update_date_invoice(page: fitz.Page, new_date_str: str) -> bool:
-    """Update Date on Tax Invoice while preserving original time if present."""
+    """Update Date on Tax Invoice while dynamically locating Date baseline and preserving original time."""
     if not new_date_str or not new_date_str.strip():
         return False
 
-    date_hits = [h for h in page.search_for("Date") if 200 < h.y0 < 250 and h.x0 > 380]
+    date_hits = [h for h in page.search_for("Date") if 180 < h.y0 < 360 and h.x0 > 380]
     if not date_hits:
         return False
 
-    # Strictly between y=223.5 and 234.5 so Invoice # at y<=223.0 is NEVER truncated
-    val_rect = fitz.Rect(478.0, 223.5, 580.0, 234.5)
+    h = date_hits[0]
+    val_y0 = h.y0 + 0.9
+    val_y1 = h.y1 + 0.5
+    baseline = h.y1 - 2.7
+    val_rect = fitz.Rect(475.0, val_y0, 595.0, val_y1)
     old_text = page.get_text("text", clip=val_rect).strip()
     time_match = re.search(r"\d{1,2}:\d{2}(?::\d{2})?", old_text)
     time_part = f" {time_match.group(0)}" if time_match else ""
@@ -217,7 +220,7 @@ def update_date_invoice(page: fitz.Page, new_date_str: str) -> bool:
         final_date = f"{new_date_str.strip()}{time_part}"
 
     page.insert_text(
-        (479.8, 232.17),
+        (479.8, baseline),
         f" {final_date.lstrip()}",
         fontsize=9.0,
         fontname="helv",
@@ -358,7 +361,7 @@ def convert_invoice(doc: fitz.Document, hypothecation: str = None, new_date: str
     sig_page_idx = invoice_page_indices[-1]
     for p_idx in invoice_page_indices:
         p = doc[p_idx]
-        if any(h.x0 > 380 and h.y0 > 150 for h in (p.search_for("Signatory") + p.search_for("Authorized"))):
+        if any(h.x0 > 320 and h.y0 > 100 for h in (p.search_for("Signatory") + p.search_for("Authorized") + p.search_for("Authorised"))):
             sig_page_idx = p_idx
             break
 
@@ -368,9 +371,9 @@ def convert_invoice(doc: fitz.Document, hypothecation: str = None, new_date: str
     dealer_y = None
     auth_y = None
 
-    # Anchor 1: Search for 'Signatory' or 'Authorized' on the right side
-    for h in (sig_page.search_for("Signatory") + sig_page.search_for("Authorized")):
-        if h.x0 > 380 and h.y0 > 150:
+    # Anchor 1: Search for 'Signatory' or 'Authorized' / 'Authorised' on the right side
+    for h in (sig_page.search_for("Signatory") + sig_page.search_for("Authorized") + sig_page.search_for("Authorised")):
+        if h.x0 > 320 and h.y0 > 100:
             auth_y = h.y0
             dealer_y = h.y0 - 47.0
             break
@@ -378,7 +381,7 @@ def convert_invoice(doc: fitz.Document, hypothecation: str = None, new_date: str
     # Anchor 2: Search for Dealer name in signature block
     if dealer_y is None:
         for term in ["SHANTI MOTORS", "Shanti Motors", "shanti motors", "M/S.SHANTI", "M/s.Shanti", "For M/S", "For M/s", "For  M"]:
-            hits = [h for h in sig_page.search_for(term) if h.x0 > 380 and h.y0 > 150]
+            hits = [h for h in sig_page.search_for(term) if h.x0 > 320 and h.y0 > 100]
             if hits:
                 dealer_y = hits[0].y0
                 auth_y = dealer_y + 47.0
@@ -387,7 +390,7 @@ def convert_invoice(doc: fitz.Document, hypothecation: str = None, new_date: str
     # Anchor 3: Search for 'Customer\'s Signatures' on the left side (same vertical level as dealer line)
     if dealer_y is None:
         for h in sig_page.search_for("Customer's Signatures"):
-            if h.y0 > 150:
+            if h.y0 > 100:
                 dealer_y = h.y0
                 auth_y = dealer_y + 47.0
                 break
@@ -397,9 +400,8 @@ def convert_invoice(doc: fitz.Document, hypothecation: str = None, new_date: str
         dealer_y = 636.5 if sig_page_idx == 0 else 215.0
         auth_y = dealer_y + 47.0
 
-    # Redact Shanti Motors: bounded tightly (dealer_y - 3.0 to dealer_y + 13.0)
-    # This leaves 34 pt of untouched space above Authorized Signatory!
-    sig_page.add_redact_annot(fitz.Rect(420.0, dealer_y - 3.0, 585.0, dealer_y + 13.0), fill=(1, 1, 1))
+    # Redact Shanti Motors: bounded cleanly from x=390 to 585
+    sig_page.add_redact_annot(fitz.Rect(390.0, dealer_y - 3.0, 585.0, dealer_y + 13.0), fill=(1, 1, 1))
     sig_page.apply_redactions()
 
     # Draw For ANNAPURNA MOTORS
@@ -410,7 +412,7 @@ def convert_invoice(doc: fitz.Document, hypothecation: str = None, new_date: str
     footers_replaced += 1
 
     # CRITICAL SELF-HEALING: Verify that Authorized Signatory is 100% present on the signature page!
-    auth_check = [h for h in sig_page.search_for("Signatory") if h.x0 > 380 and h.y0 > 150]
+    auth_check = [h for h in (sig_page.search_for("Signatory") + sig_page.search_for("Authorized") + sig_page.search_for("Authorised")) if h.x0 > 320 and h.y0 > 100]
     if not auth_check:
         auth_text = "Authorized Signatory"
         auth_len = fitz.get_text_length(auth_text, fontname="helv", fontsize=9.0)
