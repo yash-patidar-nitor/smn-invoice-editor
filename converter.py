@@ -125,34 +125,51 @@ def optimize_pdf_size(doc: fitz.Document, max_kb: int = 270) -> bool:
     return compressed_any
 
 
+def is_form_22(filename: str, text: str = "") -> bool:
+    if text:
+        t = text.upper()
+        if "FORM 22" in t or "ROAD-WORTHINESS" in t or "INITIAL CERTIFICATE" in t or "RULE 47 (1)(G)" in t:
+            return True
+    s = (filename or "").lower().replace("-", " ").replace("_", " ")
+    if any(k in s for k in ["form 22", "form22", "road worthiness", "roadworthiness", "f22"]):
+        return True
+    m = re.search(r"(^|\D)22(\D|$)", s)
+    if m:
+        is_date = bool(re.search(r"(^|\D)22\s+\d{2}\s+\d{4}", s))
+        is_inv = any(k in s for k in ["invoice", "tax", "retail"])
+        if not is_date and not is_inv:
+            return True
+    return False
+
+
+def is_sale_certificate(filename: str, text: str = "") -> bool:
+    if text:
+        t = text.upper()
+        if "SALE CERTIFICATE" in t or "FORM NO .21" in t or "FORM 21" in t or "DELIVERED BY US ON DATE" in t:
+            return True
+    s = (filename or "").lower().replace("-", " ").replace("_", " ")
+    if any(k in s for k in ["sale cert", "salecert", "sale certificate", "sale", "form 21", "form21", "f21"]):
+        return True
+    m = re.search(r"(^|\D)21(\D|$)", s)
+    if m:
+        is_date = bool(re.search(r"(^|\D)21\s+\d{2}\s+\d{4}", s))
+        is_inv = any(k in s for k in ["invoice", "tax", "retail"])
+        if not is_date and not is_inv:
+            return True
+    return False
+
+
 def detect_document_type(doc: fitz.Document, filename: str = "") -> str:
     """Detect whether the document is Form 22, Form 21 Sale Certificate, or Tax Invoice."""
-    clean_fn = (filename or "").lower().replace("-", " ").replace("_", " ")
-
-    # 1. Unambiguous filename keyword check (handles all standard Hero portal download names)
-    if any(k in clean_fn for k in ["form 22", "form22", "road worthiness", "roadworthiness"]):
-        return "form_22"
-    if any(k in clean_fn for k in ["sale cert", "salecert", "sale certificate", "form 21", "form21"]):
-        return "sale_certificate"
-    if any(k in clean_fn for k in ["gst retail", "tax invoice", "retail invoice"]):
-        return "invoice"
-
-    # 2. PDF Content inspection
+    text = ""
     try:
-        first_page_text = doc[0].get_text().upper()
-        if "FORM 22" in first_page_text or "ROAD-WORTHINESS" in first_page_text or "RULE 47 (1)(G)" in first_page_text:
-            return "form_22"
-        if "SALE CERTIFICATE" in first_page_text or "FORM NO .21" in first_page_text or "FORM 21" in first_page_text or "DELIVERED BY US ON DATE" in first_page_text:
-            return "sale_certificate"
-        if "TAX INVOICE" in first_page_text or "RETAIL INVOICE" in first_page_text or "GSTIN" in first_page_text or "CUSTOMER'S SIGNATURES" in first_page_text:
-            return "invoice"
+        text = doc[0].get_text()
     except Exception:
         pass
-
-    # 3. Fallback filename keyword check
-    if any(k in clean_fn for k in ["invoice", "tax", "retail", "gst"]):
-        return "invoice"
-
+    if is_form_22(filename, text):
+        return "form_22"
+    if is_sale_certificate(filename, text):
+        return "sale_certificate"
     return "invoice"
 
 
