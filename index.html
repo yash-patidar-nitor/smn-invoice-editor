@@ -103,7 +103,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <span class="badge">Shanti Motors ➔ Annapurna Motors • v3.0.1 Bulletproof Deep-Content Classification &amp; Zero-Collision Signatory Protection</span>
+            <span class="badge">Shanti Motors ➔ Annapurna Motors • v3.0.2 Bulletproof Document Classification &amp; Multi-Doc Protection</span>
             <h1 class="title">Hero Document Converter</h1>
             <p class="subtitle">Pixel-perfect conversion for Hero MotoCorp Invoices, Form 21 Sale Certificates & Form 22</p>
         </div>
@@ -369,12 +369,23 @@
             });
         }
 
+        function ensurePdfJsWorker() {
+            if (typeof pdfjsLib !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
+                try {
+                    const workerBlob = new Blob([`importScripts('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js');`], { type: 'application/javascript' });
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(workerBlob);
+                } catch (e) {
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                }
+            }
+        }
+
         async function applyScannedLook(pdfBytes, bwMode = true, maxPages = 1, stampInfo = null) {
             if (typeof pdfjsLib === 'undefined' || typeof PDFLib === 'undefined') {
                 return await ensureStrictlyUnder280KB(pdfBytes, maxPages || 1);
             }
             try {
-                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                ensurePdfJsWorker();
                 const loadingTask = pdfjsLib.getDocument({ data: pdfBytes });
                 const pdf = await loadingTask.promise;
                 const newDoc = await PDFLib.PDFDocument.create();
@@ -530,7 +541,7 @@
                 if (typeof pdfjsLib === 'undefined') {
                     return pdfBytes;
                 }
-                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                ensurePdfJsWorker();
                 const loadingTask = pdfjsLib.getDocument({ data: pdfBytes });
                 const pdf = await loadingTask.promise;
                 if (pdf.numPages === 1 && pdfBytes.byteLength <= 270 * 1024) {
@@ -569,12 +580,24 @@
         }
 
         async function detectDocType(arrayBuffer, fileName) {
-            // 1. Deep Content Inspection: Extract decompressed text of Page 1 with PDF.js FIRST!
-            // Document text itself is 100% definitive and cannot be tricked by file names.
+            const cleanFn = (fileName || '').toLowerCase().replace(/[-_]/g, ' ');
+
+            // 1. Immediate unambiguous filename keyword checks (handles all Hero MotoCorp download filenames)
+            if (cleanFn.includes('form 22') || cleanFn.includes('form22') || cleanFn.includes('road worthiness') || cleanFn.includes('roadworthiness')) {
+                return 'form_22';
+            }
+            if (cleanFn.includes('sale cert') || cleanFn.includes('salecert') || cleanFn.includes('sale certificate') || cleanFn.includes('form 21') || cleanFn.includes('form21')) {
+                return 'sale_certificate';
+            }
+            if (cleanFn.includes('gst retail') || cleanFn.includes('tax invoice') || cleanFn.includes('retail invoice')) {
+                return 'invoice';
+            }
+
+            // 2. Deep Content Inspection: Extract decompressed text of Page 1 with PDF.js
             try {
                 if (typeof pdfjsLib !== 'undefined') {
-                    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-                    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer.slice(0) });
+                    ensurePdfJsWorker();
+                    const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer.slice(0)) });
                     const pdf = await loadingTask.promise;
                     const page = await pdf.getPage(1);
                     const textContent = await page.getTextContent();
@@ -594,7 +617,7 @@
                 console.warn('Deep PDF text detection fallback:', err);
             }
 
-            // 2. Fallback raw slice inspection (if PDF.js failed)
+            // 3. Fallback raw slice inspection (if PDF.js failed)
             try {
                 const slice = new TextDecoder('latin1').decode(new Uint8Array(arrayBuffer.slice(0, 65536)));
                 if (slice.includes('FORM 22') || slice.includes('ROAD-WORTHINESS') || slice.includes('Rule 47')) {
@@ -608,16 +631,8 @@
                 }
             } catch(e) {}
 
-            // 3. Fallback to STRICT filename regex matching ONLY if content had no extractable text.
-            // Strictly require whole words like "form 21" or "sale_certificate", NEVER bare "21" or "22"!
-            const fn = (fileName || '').toLowerCase();
-            if (/\b(form[_\-\s]?22|road[_\-\s]?worthiness)\b/i.test(fn)) {
-                return 'form_22';
-            }
-            if (/\b(form[_\-\s]?21|sale[_\-\s]?cert|sale[_\-\s]?certificate)\b/i.test(fn)) {
-                return 'sale_certificate';
-            }
-            if (/\b(invoice|retail|tax|gst)\b/i.test(fn)) {
+            // 4. Fallback filename keyword check
+            if (cleanFn.includes('invoice') || cleanFn.includes('retail') || cleanFn.includes('tax') || cleanFn.includes('gst')) {
                 return 'invoice';
             }
 
@@ -737,8 +752,8 @@
 
             if (typeof pdfjsLib !== 'undefined') {
                 try {
-                    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-                    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer.slice(0) });
+                    ensurePdfJsWorker();
+                    const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer.slice(0)) });
                     const pdfJsDoc = await loadingTask.promise;
                     const numP = pdfJsDoc.numPages;
                     let pageScores = [];
@@ -1056,8 +1071,8 @@
                     let bodyDatePos = null;
                     if (typeof pdfjsLib !== 'undefined') {
                         try {
-                            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-                            const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer.slice(0) });
+                            ensurePdfJsWorker();
+                            const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer.slice(0)) });
                             const pdfJsDoc = await loadingTask.promise;
                             const page1 = await pdfJsDoc.getPage(1);
                             const textContent = await page1.getTextContent();

@@ -126,8 +126,18 @@ def optimize_pdf_size(doc: fitz.Document, max_kb: int = 270) -> bool:
 
 
 def detect_document_type(doc: fitz.Document, filename: str = "") -> str:
-    """Detect whether the document is Form 22, Form 21 Sale Certificate, or Tax Invoice.
-    Inspects actual PDF content first for 100% precision."""
+    """Detect whether the document is Form 22, Form 21 Sale Certificate, or Tax Invoice."""
+    clean_fn = (filename or "").lower().replace("-", " ").replace("_", " ")
+
+    # 1. Unambiguous filename keyword check (handles all standard Hero portal download names)
+    if any(k in clean_fn for k in ["form 22", "form22", "road worthiness", "roadworthiness"]):
+        return "form_22"
+    if any(k in clean_fn for k in ["sale cert", "salecert", "sale certificate", "form 21", "form21"]):
+        return "sale_certificate"
+    if any(k in clean_fn for k in ["gst retail", "tax invoice", "retail invoice"]):
+        return "invoice"
+
+    # 2. PDF Content inspection
     try:
         first_page_text = doc[0].get_text().upper()
         if "FORM 22" in first_page_text or "ROAD-WORTHINESS" in first_page_text or "RULE 47 (1)(G)" in first_page_text:
@@ -139,12 +149,10 @@ def detect_document_type(doc: fitz.Document, filename: str = "") -> str:
     except Exception:
         pass
 
-    # Fallback to strict filename matching ONLY if text extraction yielded nothing
-    fn = (filename or "").lower()
-    if re.search(r"\b(form[_\-\s]?22|road[_\-\s]?worthiness)\b", fn):
-        return "form_22"
-    if re.search(r"\b(form[_\-\s]?21|sale[_\-\s]?cert|sale[_\-\s]?certificate)\b", fn):
-        return "sale_certificate"
+    # 3. Fallback filename keyword check
+    if any(k in clean_fn for k in ["invoice", "tax", "retail", "gst"]):
+        return "invoice"
+
     return "invoice"
 
 
