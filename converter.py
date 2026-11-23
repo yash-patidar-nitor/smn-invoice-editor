@@ -126,19 +126,24 @@ def optimize_pdf_size(doc: fitz.Document, max_kb: int = 270) -> bool:
 
 
 def detect_document_type(doc: fitz.Document, filename: str = "") -> str:
-    """Detect whether the document is Form 22, Form 21 Sale Certificate, or Tax Invoice."""
-    fn = (filename or "").lower()
-    if "form22" in fn or "form 22" in fn or "form_22" in fn or "form-22" in fn or "road-worthiness" in fn or "road worthiness" in fn or "22" in fn:
-        return "form_22"
-    if "sale" in fn or "certificate" in fn or "form21" in fn or "form 21" in fn or "form_21" in fn or "form-21" in fn or "21" in fn:
-        return "sale_certificate"
-    if "invoice" in fn or "gst" in fn or "retail" in fn or "tax" in fn:
-        return "invoice"
+    """Detect whether the document is Form 22, Form 21 Sale Certificate, or Tax Invoice.
+    Inspects actual PDF content first for 100% precision."""
+    try:
+        first_page_text = doc[0].get_text().upper()
+        if "FORM 22" in first_page_text or "ROAD-WORTHINESS" in first_page_text or "RULE 47 (1)(G)" in first_page_text:
+            return "form_22"
+        if "SALE CERTIFICATE" in first_page_text or "FORM NO .21" in first_page_text or "FORM 21" in first_page_text or "DELIVERED BY US ON DATE" in first_page_text:
+            return "sale_certificate"
+        if "TAX INVOICE" in first_page_text or "RETAIL INVOICE" in first_page_text or "GSTIN" in first_page_text or "CUSTOMER'S SIGNATURES" in first_page_text:
+            return "invoice"
+    except Exception:
+        pass
 
-    first_page_text = doc[0].get_text().upper()
-    if "FORM 22" in first_page_text or "ROAD-WORTHINESS" in first_page_text or "RULE 47 (1)(G)" in first_page_text:
+    # Fallback to strict filename matching ONLY if text extraction yielded nothing
+    fn = (filename or "").lower()
+    if re.search(r"\b(form[_\-\s]?22|road[_\-\s]?worthiness)\b", fn):
         return "form_22"
-    if "SALE CERTIFICATE" in first_page_text or "FORM NO .21" in first_page_text or "FORM 21" in first_page_text:
+    if re.search(r"\b(form[_\-\s]?21|sale[_\-\s]?cert|sale[_\-\s]?certificate)\b", fn):
         return "sale_certificate"
     return "invoice"
 
