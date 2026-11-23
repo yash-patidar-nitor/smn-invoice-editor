@@ -10,6 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <style>
@@ -103,7 +104,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <span class="badge">Shanti Motors ➔ Annapurna Motors • v3.0.2 Bulletproof Document Classification &amp; Multi-Doc Protection</span>
+            <span class="badge">Shanti Motors ➔ Annapurna Motors • v3.0.3 Precision Standalone &amp; Scanned Form 21/22 Routing</span>
             <h1 class="title">Hero Document Converter</h1>
             <p class="subtitle">Pixel-perfect conversion for Hero MotoCorp Invoices, Form 21 Sale Certificates & Form 22</p>
         </div>
@@ -579,63 +580,76 @@
             }
         }
 
+        function isForm22(fileName, textContent) {
+            if (textContent) {
+                const t = textContent.toUpperCase();
+                if (t.includes('FORM 22') || t.includes('ROAD-WORTHINESS') || t.includes('INITIAL CERTIFICATE') || t.includes('RULE 47 (1)(G)')) {
+                    return true;
+                }
+            }
+            const s = (fileName || '').toLowerCase().replace(/[-_]/g, ' ');
+            if (s.includes('form 22') || s.includes('form22') || s.includes('road worthiness') || s.includes('roadworthiness') || s.includes('f22')) {
+                return true;
+            }
+            const m = s.match(/(^|\D)22(\D|$)/);
+            if (m) {
+                const isDate = /(^|\D)22\s+\d{2}\s+\d{4}/.test(s);
+                const isInv = s.includes('invoice') || s.includes('tax') || s.includes('retail');
+                if (!isDate && !isInv) return true;
+            }
+            return false;
+        }
+
+        function isSaleCertificate(fileName, textContent) {
+            if (textContent) {
+                const t = textContent.toUpperCase();
+                if (t.includes('SALE CERTIFICATE') || t.includes('FORM NO .21') || t.includes('FORM 21') || t.includes('DELIVERED BY US ON DATE')) {
+                    return true;
+                }
+            }
+            const s = (fileName || '').toLowerCase().replace(/[-_]/g, ' ');
+            if (s.includes('sale cert') || s.includes('salecert') || s.includes('sale certificate') || s.includes('sale') || s.includes('form 21') || s.includes('form21') || s.includes('f21')) {
+                return true;
+            }
+            const m = s.match(/(^|\D)21(\D|$)/);
+            if (m) {
+                const isDate = /(^|\D)21\s+\d{2}\s+\d{4}/.test(s);
+                const isInv = s.includes('invoice') || s.includes('tax') || s.includes('retail');
+                if (!isDate && !isInv) return true;
+            }
+            return false;
+        }
+
         async function detectDocType(arrayBuffer, fileName) {
-            const cleanFn = (fileName || '').toLowerCase().replace(/[-_]/g, ' ');
-
-            // 1. Immediate unambiguous filename keyword checks (handles all Hero MotoCorp download filenames)
-            if (cleanFn.includes('form 22') || cleanFn.includes('form22') || cleanFn.includes('road worthiness') || cleanFn.includes('roadworthiness')) {
-                return 'form_22';
-            }
-            if (cleanFn.includes('sale cert') || cleanFn.includes('salecert') || cleanFn.includes('sale certificate') || cleanFn.includes('form 21') || cleanFn.includes('form21')) {
-                return 'sale_certificate';
-            }
-            if (cleanFn.includes('gst retail') || cleanFn.includes('tax invoice') || cleanFn.includes('retail invoice')) {
-                return 'invoice';
-            }
-
-            // 2. Deep Content Inspection: Extract decompressed text of Page 1 with PDF.js
+            // 1. Content Inspection: Extract Page 1 text via PDF.js
+            let extractedText = '';
             try {
                 if (typeof pdfjsLib !== 'undefined') {
                     ensurePdfJsWorker();
                     const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer.slice(0)) });
                     const pdf = await loadingTask.promise;
                     const page = await pdf.getPage(1);
-                    const textContent = await page.getTextContent();
-                    const text = textContent.items.map(item => item.str).join(' ').toUpperCase();
-
-                    if (text.includes('FORM 22') || text.includes('ROAD-WORTHINESS') || text.includes('INITIAL CERTIFICATE') || text.includes('RULE 47 (1)(G)')) {
-                        return 'form_22';
-                    }
-                    if (text.includes('SALE CERTIFICATE') || text.includes('FORM NO .21') || text.includes('FORM 21') || text.includes('DELIVERED BY US ON DATE')) {
-                        return 'sale_certificate';
-                    }
-                    if (text.includes('TAX INVOICE') || text.includes('GST RETAIL INVOICE') || text.includes('RETAIL INVOICE') || text.includes('GOODS AND SERVICES TAX') || text.includes('PLACE OF SUPPLY') || text.includes("CUSTOMER'S SIGNATURES")) {
-                        return 'invoice';
-                    }
+                    const tc = await page.getTextContent();
+                    extractedText = tc.items.map(item => item.str).join(' ');
                 }
             } catch (err) {
-                console.warn('Deep PDF text detection fallback:', err);
+                console.warn('PDF.js text detection fallback:', err);
             }
 
-            // 3. Fallback raw slice inspection (if PDF.js failed)
-            try {
-                const slice = new TextDecoder('latin1').decode(new Uint8Array(arrayBuffer.slice(0, 65536)));
-                if (slice.includes('FORM 22') || slice.includes('ROAD-WORTHINESS') || slice.includes('Rule 47')) {
-                    return 'form_22';
-                }
-                if (slice.includes('SALE CERTIFICATE') || slice.includes('Form No .21') || slice.includes('Form 21')) {
-                    return 'sale_certificate';
-                }
-                if (slice.includes('TAX INVOICE') || slice.includes('GST RETAIL INVOICE') || slice.includes('Retail Invoice')) {
-                    return 'invoice';
-                }
-            } catch(e) {}
-
-            // 4. Fallback filename keyword check
-            if (cleanFn.includes('invoice') || cleanFn.includes('retail') || cleanFn.includes('tax') || cleanFn.includes('gst')) {
-                return 'invoice';
+            // Fallback raw text decoder slice if PDF.js had no text
+            if (!extractedText.trim()) {
+                try {
+                    extractedText = new TextDecoder('latin1').decode(new Uint8Array(arrayBuffer.slice(0, 65536)));
+                } catch(e) {}
             }
 
+            // 2. Classify based on extracted text + filename
+            if (isForm22(fileName, extractedText)) {
+                return 'form_22';
+            }
+            if (isSaleCertificate(fileName, extractedText)) {
+                return 'sale_certificate';
+            }
             return 'invoice';
         }
 
