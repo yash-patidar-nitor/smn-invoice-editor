@@ -103,7 +103,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <span class="badge">Shanti Motors ➔ Annapurna Motors • v3.0.0 Precision Multi-Page Scoring, Time Preservation &amp; Signatory Protection</span>
+            <span class="badge">Shanti Motors ➔ Annapurna Motors • v3.0.1 Bulletproof Deep-Content Classification &amp; Zero-Collision Signatory Protection</span>
             <h1 class="title">Hero Document Converter</h1>
             <p class="subtitle">Pixel-perfect conversion for Hero MotoCorp Invoices, Form 21 Sale Certificates & Form 22</p>
         </div>
@@ -569,20 +569,8 @@
         }
 
         async function detectDocType(arrayBuffer, fileName) {
-            const fn = (fileName || '').toLowerCase();
-
-            // 1. Filename pattern matching (handles all Hero Portal downloads and common dealer naming)
-            if (fn.includes('form22') || fn.includes('form 22') || fn.includes('form_22') || fn.includes('form-22') || fn.includes('road-worthiness') || fn.includes('road worthiness') || fn.includes('22')) {
-                return 'form_22';
-            }
-            if (fn.includes('sale') || fn.includes('certificate') || fn.includes('form21') || fn.includes('form 21') || fn.includes('form_21') || fn.includes('form-21') || fn.includes('21')) {
-                return 'sale_certificate';
-            }
-            if (fn.includes('invoice') || fn.includes('retail') || fn.includes('gst') || fn.includes('tax')) {
-                return 'invoice';
-            }
-
-            // 2. Deep Content Inspection: Extract decompressed text of Page 1 with PDF.js
+            // 1. Deep Content Inspection: Extract decompressed text of Page 1 with PDF.js FIRST!
+            // Document text itself is 100% definitive and cannot be tricked by file names.
             try {
                 if (typeof pdfjsLib !== 'undefined') {
                     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -595,10 +583,10 @@
                     if (text.includes('FORM 22') || text.includes('ROAD-WORTHINESS') || text.includes('INITIAL CERTIFICATE') || text.includes('RULE 47 (1)(G)')) {
                         return 'form_22';
                     }
-                    if (text.includes('SALE CERTIFICATE') || text.includes('FORM NO .21') || text.includes('FORM 21') || text.includes('RULE 47')) {
+                    if (text.includes('SALE CERTIFICATE') || text.includes('FORM NO .21') || text.includes('FORM 21') || text.includes('DELIVERED BY US ON DATE')) {
                         return 'sale_certificate';
                     }
-                    if (text.includes('TAX INVOICE') || text.includes('GST RETAIL INVOICE') || text.includes('RETAIL INVOICE') || text.includes('GOODS AND SERVICES TAX')) {
+                    if (text.includes('TAX INVOICE') || text.includes('GST RETAIL INVOICE') || text.includes('RETAIL INVOICE') || text.includes('GOODS AND SERVICES TAX') || text.includes('PLACE OF SUPPLY') || text.includes("CUSTOMER'S SIGNATURES")) {
                         return 'invoice';
                     }
                 }
@@ -606,16 +594,32 @@
                 console.warn('Deep PDF text detection fallback:', err);
             }
 
-            // 3. Fallback raw slice inspection
+            // 2. Fallback raw slice inspection (if PDF.js failed)
             try {
                 const slice = new TextDecoder('latin1').decode(new Uint8Array(arrayBuffer.slice(0, 65536)));
                 if (slice.includes('FORM 22') || slice.includes('ROAD-WORTHINESS') || slice.includes('Rule 47')) {
                     return 'form_22';
                 }
-                if (slice.includes('SALE CERTIFICATE') || slice.includes('Form No') || slice.includes('Form 21')) {
+                if (slice.includes('SALE CERTIFICATE') || slice.includes('Form No .21') || slice.includes('Form 21')) {
                     return 'sale_certificate';
                 }
+                if (slice.includes('TAX INVOICE') || slice.includes('GST RETAIL INVOICE') || slice.includes('Retail Invoice')) {
+                    return 'invoice';
+                }
             } catch(e) {}
+
+            // 3. Fallback to STRICT filename regex matching ONLY if content had no extractable text.
+            // Strictly require whole words like "form 21" or "sale_certificate", NEVER bare "21" or "22"!
+            const fn = (fileName || '').toLowerCase();
+            if (/\b(form[_\-\s]?22|road[_\-\s]?worthiness)\b/i.test(fn)) {
+                return 'form_22';
+            }
+            if (/\b(form[_\-\s]?21|sale[_\-\s]?cert|sale[_\-\s]?certificate)\b/i.test(fn)) {
+                return 'sale_certificate';
+            }
+            if (/\b(invoice|retail|tax|gst)\b/i.test(fn)) {
+                return 'invoice';
+            }
 
             return 'invoice';
         }
